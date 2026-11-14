@@ -7,3 +7,6 @@ local.properties
 *.apk
 *.aab
 .DS_Store
+
+# Sideloadable builds shared in the repository
+!artifacts/*.apk
