@@ -10,9 +10,9 @@ android {
         applicationId 'com.gamevault'
         minSdk 26
         targetSdk 34
-        versionCode 3
-        versionName '1.2'
-        buildConfigField 'String', 'VERSION_NAME', '"1.2"'
+        versionCode 4
+        versionName '1.3'
+        buildConfigField 'String', 'VERSION_NAME', '"1.3"'
     }
 
     buildFeatures {

@@ -489,7 +489,7 @@
     const o = opts || {};
     const url = artUrl(record, o.background ? 'background' : 'cover');
     return '<span class="art' + (o.className ? ' ' + o.className : '') + '" style="--hue:' + hueOf(record.title) + '">' +
-      (url ? '<img src="' + esc(url) + '" alt="" loading="lazy">' : '<span>' + esc(initials(record.title)) + '</span>') +
+      (url ? '<img src="' + esc(url) + '" alt="" width="300" height="400" loading="lazy" decoding="async">' : '<span>' + esc(initials(record.title)) + '</span>') +
       (o.favorite ? '<span class="art-badge">' + icon('star') + '</span>' : '') +
       (o.status ? '<span class="art-status ' + esc(record.status) + '"><span class="dot"></span>' +
         esc(STATUS_LABEL[record.status]) + '</span>' : '') +
@@ -561,14 +561,15 @@
   const tag = (text, cls) => '<span class="tag' + (cls ? ' ' + cls : '') + '">' + esc(text) + '</span>';
 
   function skeletonGrid(count) {
-    return '<div class="grid">' + Array.from({ length: count }).map(() =>
-      '<div><div class="sk" style="aspect-ratio:3/4"></div>' +
-      '<div class="sk line" style="width:80%;margin-top:8px"></div></div>').join('') + '</div>';
+    return '<div class="grid" aria-busy="true" role="status"><span class="sr-only">Loading…</span>' +
+      Array.from({ length: count }).map(() =>
+        '<div><div class="sk" style="aspect-ratio:3/4"></div>' +
+        '<div class="sk line" style="width:80%;margin-top:8px"></div></div>').join('') + '</div>';
   }
 
   function skeletonRows(count) {
-    return '<div class="list">' + Array.from({ length: count }).map(() =>
-      '<div class="sk row"></div>').join('') + '</div>';
+    return '<div class="list" aria-busy="true" role="status"><span class="sr-only">Loading…</span>' +
+      Array.from({ length: count }).map(() => '<div class="sk row"></div>').join('') + '</div>';
   }
 
   function hydrateImages(root) {
@@ -605,10 +606,10 @@
 
     let html = '<div class="screen"><div class="intro">' +
       '<div class="intro-top"><div>' +
-      '<p class="overline" style="margin:0">GameVault</p>' +
+      '<p class="overline" translate="no" style="margin:0">GameVault</p>' +
       '<h1 class="display">Welcome back, ' + esc(name) + '</h1>' +
       '</div><button class="avatar" data-act="tab-profile" aria-label="Open profile">' +
-      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="">' : esc(initials(name))) + '</button></div>' +
+      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="" width="96" height="96" decoding="async">' : esc(initials(name))) + '</button></div>' +
       statStrip([
         ['Games', games.length],
         ['Playing', playing.length],
@@ -629,7 +630,7 @@
     if (featured) {
       const bg = artUrl(featured, 'background') || artUrl(featured, 'cover');
       html += '<button class="feature" style="--hue:' + hueOf(featured.title) + '" data-act="open-game" data-id="' + esc(featured.id) + '">' +
-        (bg ? '<img class="feature-art" src="' + esc(bg) + '" alt="" loading="lazy">'
+        (bg ? '<img class="feature-art" src="' + esc(bg) + '" alt="" width="1200" height="825" fetchpriority="high" decoding="async">'
           : '<span class="feature-mark" aria-hidden="true">' + esc(initials(featured.title)) + '</span>') +
         '<span class="feature-scrim"></span>' +
         '<span class="feature-body">' +
@@ -669,7 +670,7 @@
           const first = c.gameIds.map(gameById).filter(Boolean)[0];
           const img = c.artworkKey && ART[c.artworkKey] ? ART[c.artworkKey] : (first ? artUrl(first, 'background') || artUrl(first, 'cover') : '');
           return '<button class="shelf" style="flex:0 0 260px;width:260px" data-act="open-collection" data-id="' + esc(c.id) + '">' +
-            (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '') +
+            (img ? '<img src="' + esc(img) + '" alt="" width="800" height="450" loading="lazy" decoding="async">' : '') +
             (c.favorite ? '<span class="shelf-fav">' + icon('star') + '</span>' : '') +
             '<span class="shelf-body"><span class="shelf-title">' + esc(c.name) + '</span>' +
             '<span class="shelf-meta">' + c.gameIds.length + ' games</span></span></button>';
@@ -694,7 +695,7 @@
         '<button class="iconbtn solid" data-act="tab-add" aria-label="Add game">' + icon('plus') + '</button>') +
       '<div class="lib-bar"><div class="lib-search">' +
       '<label class="searchbar">' + icon('search') +
-      '<input id="lib-search" type="search" placeholder="Search games" value="' + esc(state.query) + '" aria-label="Search library"></label>' +
+      '<input id="lib-search" type="search" placeholder="Search games…" value="' + esc(state.query) + '" aria-label="Search library" autocomplete="off"></label>' +
       '<button class="iconbtn" data-act="open-filters" aria-label="Filters and sorting">' + icon('filters') + '</button>' +
       '</div><div class="lib-tools">' +
       '<div class="chips" style="flex:1">' + statusChips() + '</div>' +
@@ -835,7 +836,7 @@
     const q = state.discoveryQuery.trim().toLowerCase();
     const apps = state.discovery.filter((a) => !q || a.label.toLowerCase().includes(q));
     html += '<label class="searchbar" style="margin-top:12px">' + icon('search') +
-      '<input id="disc-search" type="search" placeholder="Search installed apps" value="' + esc(state.discoveryQuery) + '"></label>';
+      '<input id="disc-search" type="search" placeholder="Search installed apps…" aria-label="Search installed apps" autocomplete="off" value="' + esc(state.discoveryQuery) + '"></label>';
 
     if (!apps.length) {
       return html + '<div style="margin-top:12px">' + empty('No apps found', 'Try another search term.', '', '', 'search') + '</div>';
@@ -847,7 +848,7 @@
       return '<button class="discover' + (existing ? ' in-library' : '') + '" ' +
         'data-act="discover-toggle" data-pkg="' + esc(app.packageName) + '" ' +
         'aria-pressed="' + (selected || !!existing) + '"' + (existing ? ' disabled' : '') + '>' +
-        '<img class="app-icon" src="' + esc(app.icon || '') + '" alt="" loading="lazy">' +
+        '<img class="app-icon" src="' + esc(app.icon || '') + '" alt="" width="88" height="88" loading="lazy" decoding="async">' +
         '<span class="discover-main"><span class="discover-title">' + esc(app.label) + '</span>' +
         '<span class="discover-sub">' + esc(existing ? 'Already in library' : app.packageName) + '</span></span>' +
         '<span class="tick">' + icon('check') + '</span></button>';
@@ -875,7 +876,7 @@
     } else {
       html += '<form id="form-catalogue" class="lib-search" style="margin-top:12px">' +
         '<label class="searchbar">' + icon('search') +
-        '<input name="q" type="search" placeholder="Search the catalogue" value="' + esc(state.catalogueQuery) + '"></label>' +
+        '<input name="q" type="search" placeholder="Search the catalogue…" aria-label="Search the catalogue" autocomplete="off" value="' + esc(state.catalogueQuery) + '"></label>' +
         '<button class="iconbtn solid" type="submit" aria-label="Search catalogue">' + icon('search') + '</button></form>';
     }
 
@@ -899,7 +900,7 @@
       const existing = db.games.find((g) => g.title.toLowerCase() === item.title.toLowerCase());
       return '<div class="result">' +
         '<span class="art" style="--hue:' + hueOf(item.title) + ';width:54px">' +
-        (item.image ? '<img src="' + esc(item.image) + '" alt="" loading="lazy">' : '<span>' + esc(initials(item.title)) + '</span>') +
+        (item.image ? '<img src="' + esc(item.image) + '" alt="" width="300" height="400" loading="lazy" decoding="async">' : '<span>' + esc(initials(item.title)) + '</span>') +
         '</span><span class="row-main"><span class="row-title">' + esc(item.title) + '</span>' +
         '<span class="row-meta">' + esc([item.released ? item.released.slice(0, 4) : '', (item.platforms || []).slice(0, 2).join(', ')].filter(Boolean).join(' · ')) + '</span></span>' +
         '<button class="btn sm' + (existing ? '' : ' soft') + '" data-act="catalogue-add" data-index="' + index + '">' +
@@ -920,9 +921,9 @@
     state.formPlatforms = (values.platforms || []).map((p) => (typeof p === 'string' ? p : p.name));
     const genreText = Array.isArray(values.genres) ? values.genres.join(', ') : '';
     return '<label class="field"><span class="label">Title</span>' +
-      '<input name="title" required maxlength="120" value="' + esc(values.title) + '" placeholder="Game title"></label>' +
+              '<input name="title" required maxlength="120" autocomplete="off" value="' + esc(values.title) + '" placeholder="Game title"></label>' +
       '<label class="field"><span class="label">Franchise</span>' +
-      '<input name="franchise" maxlength="60" value="' + esc(values.franchise) + '" placeholder="Optional"></label>' +
+      '<input name="franchise" maxlength="60" autocomplete="off" value="' + esc(values.franchise) + '" placeholder="Optional"></label>' +
       '<div class="field"><span class="label">Platforms</span><div class="chips wrap">' +
       PLATFORMS.map((p) => '<button type="button" class="chip" data-act="form-platform" data-platform="' + esc(p) + '" aria-pressed="' +
         state.formPlatforms.includes(p) + '">' + esc(p) + '</button>').join('') + '</div></div>' +
@@ -934,17 +935,17 @@
       [0, 1, 2, 3, 4, 5].map((n) => '<option value="' + n + '"' + (values.rating === n ? ' selected' : '') + '>' + (n ? n + ' / 5' : 'Unrated') + '</option>').join('') +
       '</select></label></div>' +
       '<label class="field"><span class="label">Genres</span>' +
-      '<input name="genres" maxlength="120" value="' + esc(genreText) + '" placeholder="Action, RPG"></label>' +
+      '<input name="genres" maxlength="120" autocomplete="off" value="' + esc(genreText) + '" placeholder="Action, RPG"></label>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-      '<label class="field"><span class="label">Developer</span><input name="developer" maxlength="80" value="' + esc(values.developer) + '"></label>' +
-      '<label class="field"><span class="label">Publisher</span><input name="publisher" maxlength="80" value="' + esc(values.publisher) + '"></label></div>' +
+      '<label class="field"><span class="label">Developer</span><input name="developer" maxlength="80" autocomplete="off" value="' + esc(values.developer) + '"></label>' +
+      '<label class="field"><span class="label">Publisher</span><input name="publisher" maxlength="80" autocomplete="off" value="' + esc(values.publisher) + '"></label></div>' +
       '<label class="field"><span class="label">Release date</span><input name="releaseDate" type="date" value="' + esc(values.releaseDate) + '"></label>' +
       '<div class="field"><span class="label">Cover artwork</span>' +
       '<button type="button" class="btn block" data-act="change-art" data-target="cover">' + icon('image') + 'Choose image</button></div>' +
       '<label class="field"><span class="label">Description</span>' +
-      '<textarea name="description" maxlength="2000" rows="3">' + esc(values.description) + '</textarea></label>' +
+      '<textarea name="description" maxlength="2000" rows="3" autocomplete="off">' + esc(values.description) + '</textarea></label>' +
       '<label class="field"><span class="label">Personal notes</span>' +
-      '<textarea name="notes" maxlength="2000" rows="3">' + esc(values.notes) + '</textarea></label>';
+      '<textarea name="notes" maxlength="2000" rows="3" autocomplete="off">' + esc(values.notes) + '</textarea></label>';
   }
 
   function screenGame(params) {
@@ -968,7 +969,7 @@
     ].filter(([, value]) => value);
 
     return '<div class="screen"><div class="hero' + (bg ? '' : ' no-art') + '">' +
-      '<div class="hero-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy">' : '') + '</div>' +
+      '<div class="hero-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" width="900" height="600" fetchpriority="high" decoding="async">' : '') + '</div>' +
       '<div class="hero-top"><button class="iconbtn glass" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
       '<div style="display:flex;gap:8px">' +
       '<button class="iconbtn glass" data-act="toggle-fav" data-id="' + esc(game.id) + '" aria-pressed="' + game.favorite + '" aria-label="Favorite">' + icon('star') + '</button>' +
@@ -991,7 +992,7 @@
         '" aria-pressed="' + (game.status === id) + '">' + esc(label) + '</button>').join('') + '</div>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">' +
       '<span class="caption">Your rating</span>' +
-      '<span class="starpick">' + [1, 2, 3, 4, 5].map((n) =>
+      '<span class="starpick" role="group" aria-label="Personal rating">' + [1, 2, 3, 4, 5].map((n) =>
         '<button class="' + (n <= game.rating ? 'on' : '') + '" data-act="rate" data-id="' + esc(game.id) +
         '" data-value="' + n + '" aria-label="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>').join('') +
       '</span></div>' +
@@ -1073,7 +1074,7 @@
         const img = c.artworkKey && ART[c.artworkKey] ? ART[c.artworkKey]
           : (first ? artUrl(first, 'background') || artUrl(first, 'cover') : '');
         return '<button class="shelf" data-act="open-collection" data-id="' + esc(c.id) + '">' +
-          (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '') +
+          (img ? '<img src="' + esc(img) + '" alt="" width="800" height="450" loading="lazy" decoding="async">' : '') +
           (c.favorite ? '<span class="shelf-fav">' + icon('star') + '</span>' : '') +
           '<span class="shelf-body"><span class="shelf-title">' + esc(c.name) + '</span>' +
           '<span class="shelf-meta">' + c.gameIds.length + (c.gameIds.length === 1 ? ' game' : ' games') + '</span></span></button>';
@@ -1209,7 +1210,7 @@
       '<div class="wrap">' +
       '<div class="profile-hero">' +
       '<button class="avatar lg" data-act="change-avatar" aria-label="Change profile image">' +
-      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="">' : esc(initials(p.username || 'Player One'))) + '</button>' +
+      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="" width="96" height="96" decoding="async">' : esc(initials(p.username || 'Player One'))) + '</button>' +
       '<div class="profile-name">' + esc(p.username || 'Player One') + '</div>' +
       (p.bio ? '<p class="profile-bio">' + esc(p.bio) + '</p>' : '') +
       '<button class="btn sm" data-act="edit-profile">Edit profile</button>' +
@@ -1383,7 +1384,7 @@
 
   function APP_VERSION() {
     try { if (host && host.appVersion) return host.appVersion(); } catch (e) { /* ignore */ }
-    return '1.2';
+    return '1.3';
   }
 
   const SCREENS = {
@@ -1498,11 +1499,28 @@
     render();
   }
 
+  function showFormError(form, message) {
+    let box = form.querySelector('.field-error');
+    if (!box) {
+      box = document.createElement('p');
+      box.className = 'field-error';
+      box.setAttribute('role', 'alert');
+      form.prepend(box);
+    }
+    box.textContent = message;
+    box.hidden = false;
+    const title = form.querySelector('[name="title"]');
+    if (title) {
+      title.setAttribute('aria-invalid', 'true');
+      title.focus();
+    }
+  }
+
   function saveGameForm(form) {
     const data = new FormData(form);
     const id = String(data.get('id') || '');
     const title = String(data.get('title') || '').trim();
-    if (!title) { toast('A title is required.', true); return; }
+    if (!title) { showFormError(form, 'Add a title before saving.'); return; }
 
     const platforms = state.formPlatforms.slice();
     const base = {
@@ -1658,7 +1676,7 @@
       '<form id="form-custom-platform" style="margin-top:16px">' +
       '<input type="hidden" name="id" value="' + esc(game.id) + '">' +
       '<label class="field"><span class="label">Custom platform</span>' +
-      '<input name="name" placeholder="e.g. Retro handheld" maxlength="40"></label>' +
+      '<input name="name" placeholder="e.g. Retro handheld" maxlength="40" autocomplete="off"></label>' +
       '<button class="btn block" type="submit" style="margin-top:12px">Add custom platform</button></form>');
   }
 
@@ -1668,9 +1686,9 @@
       '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
       '<div class="sheet-body">' +
       '<label class="field"><span class="label">Username</span>' +
-      '<input name="username" maxlength="40" value="' + esc(p.username) + '"></label>' +
+      '<input name="username" maxlength="40" autocomplete="off" spellcheck="false" value="' + esc(p.username) + '"></label>' +
       '<label class="field"><span class="label">Short biography</span>' +
-      '<textarea name="bio" maxlength="240" rows="3">' + esc(p.bio) + '</textarea></label>' +
+      '<textarea name="bio" maxlength="240" rows="3" autocomplete="off">' + esc(p.bio) + '</textarea></label>' +
       '<div class="field"><span class="label">Favorite platforms</span><div class="chips wrap">' +
       PLATFORMS.map((platform) => '<button type="button" class="chip" data-act="profile-platform" data-platform="' +
         esc(platform) + '" aria-pressed="' + ((p.favoritePlatforms || []).includes(platform)) + '">' +
@@ -1694,7 +1712,7 @@
       '<div class="sheet-head"><h2>New collection</h2>' +
       '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
       '<label class="field"><span class="label">Name</span>' +
-      '<input name="name" required maxlength="60" placeholder="e.g. Resident Evil"></label>' +
+      '<input name="name" required maxlength="60" autocomplete="off" placeholder="e.g. Resident Evil"></label>' +
       '<p class="sheet-note">A game can belong to several collections.</p>' +
       '<button class="btn primary block" type="submit" style="margin-top:14px">Create collection</button></form>');
   }
@@ -1705,7 +1723,7 @@
       '<div class="sheet-head"><h2>Rename collection</h2>' +
       '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
       '<label class="field"><span class="label">Name</span>' +
-      '<input name="name" required maxlength="60" value="' + esc(collection.name) + '"></label>' +
+      '<input name="name" required maxlength="60" autocomplete="off" value="' + esc(collection.name) + '"></label>' +
       '<button class="btn primary block" type="submit" style="margin-top:14px">Save name</button></form>');
   }
 
@@ -2019,6 +2037,11 @@
   });
 
   document.addEventListener('input', (e) => {
+    if (e.target.getAttribute && e.target.getAttribute('aria-invalid') === 'true') {
+      e.target.removeAttribute('aria-invalid');
+      const error = e.target.form && e.target.form.querySelector('.field-error');
+      if (error) error.hidden = true;
+    }
     if (e.target.id === 'lib-search') {
       state.query = e.target.value;
       refreshLibrary(true);
