@@ -11,59 +11,61 @@
   <header class="sticky-top">
     <div class="topbar">
       <h1>GameVault</h1>
-      <button type="button" class="icon-btn" id="add-btn" aria-label="Add game">+</button>
+      <div class="topbar-actions">
+        <select id="sort" aria-label="Sort games">
+          <option value="recent">Recently added</option>
+          <option value="name">Name</option>
+          <option value="mostPlayed">Most played</option>
+          <option value="lastPlayed">Last played</option>
+        </select>
+        <button type="button" class="icon-btn" id="view-toggle" aria-label="Toggle view">⌘ List</button>
+        <button type="button" class="icon-btn" id="add-btn" aria-label="Add games">+</button>
+      </div>
     </div>
     <div class="search-row">
-      <input type="search" id="search" placeholder="Search title, genre, platform" aria-label="Search games">
-      <select id="sort" aria-label="Sort games">
-        <option value="recent">Recent</option>
-        <option value="title">A–Z</option>
-        <option value="rating">Top rated</option>
-      </select>
+      <input type="search" id="search" placeholder="Search games" aria-label="Search games">
     </div>
-    <div class="chips" id="filters"></div>
   </header>
 
   <main>
-    <section class="stats" id="stats"></section>
-    <ul class="list" id="list"></ul>
-    <p class="empty" id="empty" hidden></p>
+    <section class="stats" id="stats">
+      <div class="stat">
+        <span class="stat-value" id="stat-total">0</span>
+        <span class="stat-label">Total games</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-plays">0</span>
+        <span class="stat-label">Total plays</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-most-played">–</span>
+        <span class="stat-label">Most played</span>
+      </div>
+    </section>
+
+    <section id="home">
+      <div class="view-header">
+        <h2>Library</h2>
+      </div>
+      <ul class="list game-grid" id="game-grid"></ul>
+      <ul class="list game-list" id="game-list" hidden></ul>
+      <p class="empty" id="empty"></p>
+    </section>
+
+    <section id="add-games" hidden>
+      <div class="view-header">
+        <h2>Add games</h2>
+        <div class="add-actions">
+          <span class="selected-count" id="selected-count">0</span> selected
+        </div>
+      </div>
+      <ul class="list" id="installed-list"></ul>
+      <div class="add-footer">
+        <button type="button" class="btn ghost" id="cancel-add">Cancel</button>
+        <button type="button" class="btn primary" id="done-add">Add selected</button>
+      </div>
+    </section>
   </main>
-
-  <div class="modal" id="modal" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <form id="game-form" autocomplete="off">
-        <div class="sheet-head">
-          <h2 id="modal-title">Add game</h2>
-          <button type="button" class="icon-btn ghost" id="close-btn" aria-label="Close">×</button>
-        </div>
-
-        <label>Title
-          <input name="title" required maxlength="80">
-        </label>
-
-        <div class="grid2">
-          <label>Platform <select name="platform"></select></label>
-          <label>Status <select name="status"></select></label>
-        </div>
-
-        <div class="grid2">
-          <label>Genre <input name="genre" maxlength="40"></label>
-          <label>Rating <select name="rating"></select></label>
-        </div>
-
-        <label>Notes
-          <textarea name="notes" rows="4" maxlength="500"></textarea>
-        </label>
-
-        <div class="actions">
-          <button type="button" class="btn danger" id="delete-btn" hidden>Delete</button>
-          <span class="spacer"></span>
-          <button type="submit" class="btn primary">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
 
   <script src="app.js"></script>
 </body>

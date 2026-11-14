@@ -1,45 +1,47 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'gamevault.games.v1';
-  const STATUSES = {
-    playing: 'Playing',
-    backlog: 'Backlog',
-    completed: 'Completed',
-    dropped: 'Dropped',
-  };
-  const PLATFORMS = ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch', 'Mobile', 'Other'];
+  const STORAGE_KEY = 'gamevault.library.v1';
   const SORTERS = {
     recent: (a, b) => b.addedAt - a.addedAt,
-    title: (a, b) => a.title.localeCompare(b.title),
-    rating: (a, b) => (b.rating - a.rating) || a.title.localeCompare(b.title),
+    name: (a, b) => a.title.localeCompare(b.title),
+    mostPlayed: (a, b) => b.playCount - a.playCount || a.title.localeCompare(b.title),
+    lastPlayed: (a, b) => b.lastPlayed - a.lastPlayed || a.title.localeCompare(b.title),
   };
   const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
   const $ = (sel) => document.querySelector(sel);
   const el = {
-    list: $('#list'),
-    empty: $('#empty'),
-    stats: $('#stats'),
-    filters: $('#filters'),
+    home: $('#home'),
+    addGames: $('#add-games'),
+    gameGrid: $('#game-grid'),
+    gameList: $('#game-list'),
+    installedList: $('#installed-list'),
+    statsTotal: $('#stat-total'),
+    statsPlays: $('#stat-plays'),
+    statsMostPlayed: $('#stat-most-played'),
     search: $('#search'),
     sort: $('#sort'),
-    modal: $('#modal'),
-    modalTitle: $('#modal-title'),
-    form: $('#game-form'),
-    deleteBtn: $('#delete-btn'),
+    viewToggle: $('#view-toggle'),
+    addBtn: $('#add-btn'),
+    doneAdd: $('#done-add'),
+    cancelAdd: $('#cancel-add'),
+    selectedCount: $('#selected-count'),
+    empty: $('#empty'),
   };
 
-  let games = loadGames();
-  let filter = 'all';
-  let editingId = null;
-  let modalOpen = false;
-  let disarmTimer = null;
+  let library = loadLibrary();
+  let installedGames = [];
+  let playStats = {};
+  let view = 'home';
+  let sortKey = 'recent';
+  let gridMode = true;
+  let query = '';
+  let selectedPackages = new Set();
 
-  const field = (name) => el.form.elements.namedItem(name);
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
 
-  function loadGames() {
+  function loadLibrary() {
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
       return Array.isArray(parsed) ? parsed : [];
@@ -48,14 +50,140 @@
     }
   }
 
-  function persist() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
+  function saveLibrary() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
   }
 
-  function hueOf(text) {
-    let hash = 0;
-    for (const ch of text) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
-    return hash % 360;
+  function loadPlayStats() {
+    try {
+      const parsed = JSON.parse(Android.getAllPlayStats() || '{}');
+      return typeof parsed === 'object' && parsed !== null ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function syncStats() {
+    playStats = loadPlayStats();
+    for (const game of library) {
+      const stats = playStats[game.packageName] || {};
+      game.playCount = stats.count || 0;
+      game.lastPlayed = stats.lastPlayed || 0;
+    }
+    saveLibrary();
+  }
+
+  function installedPackages() {
+    return new Set(library.map((g) => g.packageName));
+  }
+
+  function renderHome() {
+    el.home.hidden = false;
+    el.addGames.hidden = true;
+
+    syncStats();
+
+    const totalPlays = library.reduce((sum, g) => sum + (g.playCount || 0), 0);
+    let mostPlayedName = '–';
+    let mostPlayedCount = 0;
+    for (const g of library) {
+      if ((g.playCount || 0) > mostPlayedCount) {
+        mostPlayedCount = g.playCount;
+        mostPlayedName = g.title;
+      }
+    }
+    el.statsTotal.textContent = library.length;
+    el.statsPlays.textContent = totalPlays;
+    el.statsMostPlayed.textContent = mostPlayedName;
+
+    const sorted = [...library]
+      .filter((g) => !query || g.title.toLowerCase().includes(query))
+      .sort(SORTERS[sortKey]);
+
+    const container = gridMode ? el.gameGrid : el.gameList;
+    const other = gridMode ? el.gameList : el.gameGrid;
+    other.innerHTML = '';
+    container.innerHTML = sorted.map((g) => {
+      const stats = playStats[g.packageName] || {};
+      const count = stats.count || 0;
+      const last = stats.lastPlayed || 0;
+      const lastPlayed = last
+        ? new Date(last).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+        : 'Never';
+      const iconUrl = g.iconBase64 ? `data:image/png;base64,${g.iconBase64}` : '';
+      return `
+        <div class="game-card" data-pkg="${esc(g.packageName)}">
+          <img class="game-icon" src="${esc(iconUrl)}" alt="${esc(g.title)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="game-avatar" style="display:none">${initials(g.title)}</div>
+          <div class="game-info">
+            <div class="game-title">${esc(g.title)}</div>
+            <div class="game-meta">${count} play${count !== 1 ? 's' : ''} · Last: ${lastPlayed}</div>
+          </div>
+          <div class="game-launch">▶</div>
+        </div>`;
+    }).join('');
+
+    el.empty.hidden = library.length > 0;
+    el.empty.textContent = library.length
+      ? 'No games match your search.'
+      : 'Your vault is empty. Tap + to add games from your device.';
+  }
+
+  function renderAdd() {
+    el.home.hidden = true;
+    el.addGames.hidden = false;
+
+    const inLibrary = installedPackages();
+    const filtered = installedGames.filter((g) =>
+      !inLibrary.has(g.packageName) &&
+      (!query || g.label.toLowerCase().includes(query))
+    );
+    const sorted = [...filtered].sort(SORTERS[sortKey]);
+
+    el.installedList.innerHTML = sorted.map((g) => {
+      const checked = selectedPackages.has(g.packageName) ? 'checked' : '';
+      const iconUrl = g.iconBase64 ? `data:image/png;base64,${g.iconBase64}` : '';
+      return `
+        <label class="install-row" data-pkg="${esc(g.packageName)}">
+          <input type="checkbox" class="install-checkbox" value="${esc(g.packageName)}" ${checked}>
+          <img class="install-icon" src="${esc(iconUrl)}" alt="${esc(g.label)}" onerror="this.style.display='none'">
+          <div class="install-title">${esc(g.label)}</div>
+          <div class="install-pkg">${esc(g.packageName)}</div>
+          <div class="install-check">✓</div>
+        </label>`;
+    }).join('');
+
+    el.selectedCount.textContent = selectedPackages.size;
+  }
+
+  function addSelected() {
+    const now = Date.now();
+    for (const pkg of selectedPackages) {
+      const installed = installedGames.find((g) => g.packageName === pkg);
+      if (installed && !library.some((g) => g.packageName === pkg)) {
+        library.push({
+          id: crypto.randomUUID(),
+          packageName: pkg,
+          title: installed.label,
+          iconBase64: installed.iconBase64,
+          addedAt: now,
+          playCount: 0,
+          lastPlayed: 0,
+        });
+      }
+    }
+    saveLibrary();
+    selectedPackages.clear();
+    view = 'home';
+    renderHome();
+  }
+
+  function launchGame(packageName) {
+    if (Android) {
+      Android.vibrate(15);
+      Android.recordPlay(packageName);
+      Android.launchGame(packageName);
+    }
   }
 
   function initials(title) {
@@ -63,182 +191,75 @@
     return (second ? first[0] + second[0] : first.slice(0, 2)).toUpperCase();
   }
 
-  function fillSelect(select, options) {
-    select.innerHTML = options
-      .map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`)
-      .join('');
+  function navigateHome() {
+    view = 'home';
+    selectedPackages.clear();
+    renderHome();
   }
 
-  function visibleGames() {
-    const q = el.search.value.trim().toLowerCase();
-    return games
-      .filter((g) => filter === 'all' || g.status === filter)
-      .filter((g) => !q || [g.title, g.genre, g.platform].some((v) => (v || '').toLowerCase().includes(q)))
-      .sort(SORTERS[el.sort.value]);
+  function navigateAdd() {
+    view = 'add';
+    renderAdd();
   }
 
-  function renderStats() {
-    const rated = games.filter((g) => g.rating > 0);
-    const avg = rated.length
-      ? (rated.reduce((sum, g) => sum + g.rating, 0) / rated.length).toFixed(1)
-      : '–';
-    const countOf = (status) => games.filter((g) => g.status === status).length;
-    el.stats.innerHTML = [
-      ['Total', games.length],
-      ['Playing', countOf('playing')],
-      ['Completed', countOf('completed')],
-      ['Avg rating', avg],
-    ]
-      .map(([label, value]) => `
-        <div class="stat">
-          <span class="stat-value">${value}</span>
-          <span class="stat-label">${label}</span>
-        </div>`)
-      .join('');
+  function setupHomeEvents() {
+    el.viewToggle.addEventListener('click', () => {
+      gridMode = !gridMode;
+      el.viewToggle.textContent = gridMode ? '⌘ List' : '⌘ Grid';
+      renderHome();
+    });
+    el.addBtn.addEventListener('click', navigateAdd);
+    el.search.addEventListener('input', (e) => {
+      query = e.target.value.toLowerCase();
+      if (view === 'home') renderHome();
+      else renderAdd();
+    });
+    el.sort.addEventListener('change', (e) => {
+      sortKey = e.target.value;
+      if (view === 'home') renderHome();
+      else renderAdd();
+    });
+
+    el.gameGrid.addEventListener('click', (e) => {
+      const card = e.target.closest('.game-card');
+      if (card) launchGame(card.dataset.pkg);
+    });
+    el.gameList.addEventListener('click', (e) => {
+      const card = e.target.closest('.game-card');
+      if (card) launchGame(card.dataset.pkg);
+    });
   }
 
-  function renderFilters() {
-    el.filters.innerHTML = [['all', 'All'], ...Object.entries(STATUSES)]
-      .map(([key, label]) =>
-        `<button type="button" class="chip" data-filter="${key}" aria-pressed="${filter === key}">${label}</button>`)
-      .join('');
+  function setupAddEvents() {
+    el.doneAdd.addEventListener('click', addSelected);
+    el.cancelAdd.addEventListener('click', navigateHome);
+
+    el.installedList.addEventListener('click', (e) => {
+      const row = e.target.closest('.install-row');
+      if (!row) return;
+      const pkg = row.dataset.pkg;
+      const checkbox = row.querySelector('.install-checkbox');
+      checkbox.checked = !checkbox.checked;
+      if (checkbox.checked) selectedPackages.add(pkg);
+      else selectedPackages.delete(pkg);
+      renderAdd();
+    });
   }
 
-  function cardHtml(g) {
-    const stars = g.rating
-      ? `<span class="stars" aria-label="${g.rating} of 5 stars">${'★'.repeat(g.rating)}<span class="off">${'★'.repeat(5 - g.rating)}</span></span>`
-      : '<span class="muted">Unrated</span>';
-    const meta = [g.platform, g.genre].filter(Boolean).join(' · ');
-    return `
-      <li class="card" data-id="${esc(g.id)}">
-        <div class="cover" style="--hue:${hueOf(g.title)}">${esc(initials(g.title))}</div>
-        <div class="info">
-          <div class="title">${esc(g.title)}</div>
-          <div class="meta">${esc(meta)}</div>
-          <div class="row">
-            <span class="badge s-${esc(g.status)}">${esc(STATUSES[g.status])}</span>
-            ${stars}
-          </div>
-        </div>
-      </li>`;
-  }
-
-  function render() {
-    renderStats();
-    renderFilters();
-    const items = visibleGames();
-    el.list.innerHTML = items.map(cardHtml).join('');
-    el.empty.hidden = items.length > 0;
-    el.empty.textContent = games.length
-      ? 'No games match these filters.'
-      : 'Your vault is empty. Tap + to add your first game.';
-  }
-
-  function showModal() {
-    if (!modalOpen) history.pushState({ modal: true }, '');
-    modalOpen = true;
-    el.modal.hidden = false;
-  }
-
-  function hideModal() {
-    modalOpen = false;
-    el.modal.hidden = true;
-  }
-
-  function closeModal() {
-    if (!modalOpen) return;
-    if (history.state && history.state.modal) history.back();
-    else hideModal();
-  }
-
-  function resetDeleteButton() {
-    clearTimeout(disarmTimer);
-    delete el.deleteBtn.dataset.armed;
-    el.deleteBtn.textContent = 'Delete';
-  }
-
-  function openEditor(id) {
-    const game = games.find((g) => g.id === id);
-    editingId = game ? game.id : null;
-    const values = game ?? { title: '', platform: 'PC', genre: '', status: 'backlog', rating: 0, notes: '' };
-    for (const key of ['title', 'platform', 'genre', 'status', 'rating', 'notes']) {
-      field(key).value = String(values[key] ?? '');
+  function init() {
+    if (window.Android) {
+      try {
+        const json = Android.getInstalledGames();
+        installedGames = JSON.parse(json || '[]');
+      } catch {
+        installedGames = [];
+      }
     }
-    el.modalTitle.textContent = game ? 'Edit game' : 'Add game';
-    el.deleteBtn.hidden = !game;
-    resetDeleteButton();
-    showModal();
-    field('title').focus();
+    syncStats();
+    setupHomeEvents();
+    setupAddEvents();
+    renderHome();
   }
 
-  function saveForm(event) {
-    event.preventDefault();
-    const title = field('title').value.trim();
-    if (!title) {
-      field('title').focus();
-      return;
-    }
-    const data = {
-      title,
-      platform: field('platform').value,
-      genre: field('genre').value.trim(),
-      status: field('status').value,
-      rating: Number(field('rating').value),
-      notes: field('notes').value.trim(),
-    };
-    if (editingId) {
-      games = games.map((g) => (g.id === editingId ? { ...g, ...data } : g));
-    } else {
-      games.push({ id: crypto.randomUUID(), addedAt: Date.now(), ...data });
-    }
-    persist();
-    closeModal();
-    render();
-  }
-
-  function onDeleteClick() {
-    if (!el.deleteBtn.dataset.armed) {
-      el.deleteBtn.dataset.armed = 'true';
-      el.deleteBtn.textContent = 'Tap again to delete';
-      disarmTimer = setTimeout(resetDeleteButton, 3000);
-      return;
-    }
-    games = games.filter((g) => g.id !== editingId);
-    persist();
-    resetDeleteButton();
-    closeModal();
-    render();
-  }
-
-  fillSelect(field('platform'), PLATFORMS.map((p) => [p, p]));
-  fillSelect(field('status'), Object.entries(STATUSES));
-  fillSelect(field('rating'), [0, 1, 2, 3, 4, 5].map((n) => [String(n), n ? '★'.repeat(n) : 'Unrated']));
-
-  el.filters.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-filter]');
-    if (!btn) return;
-    filter = btn.dataset.filter;
-    render();
-  });
-  el.list.addEventListener('click', (event) => {
-    const card = event.target.closest('.card');
-    if (card) openEditor(card.dataset.id);
-  });
-  el.search.addEventListener('input', render);
-  el.sort.addEventListener('change', render);
-  $('#add-btn').addEventListener('click', () => openEditor(null));
-  $('#close-btn').addEventListener('click', closeModal);
-  el.modal.addEventListener('click', (event) => {
-    if (event.target === el.modal) closeModal();
-  });
-  el.form.addEventListener('submit', saveForm);
-  el.deleteBtn.addEventListener('click', onDeleteClick);
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeModal();
-  });
-  window.addEventListener('popstate', () => {
-    if (modalOpen) hideModal();
-  });
-
-  render();
+  init();
 })();
