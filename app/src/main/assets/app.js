@@ -1,20 +1,18 @@
 /*
- * GameVault V1
- * Local-first universal gaming library.
- *
- * All user data lives in localStorage; artwork lives in IndexedDB and is
- * referenced by key so records stay small and backups stay portable.
+ * GameVault — UI layer
+ * Local-first gaming library. Data lives in localStorage, artwork in IndexedDB.
  */
 (() => {
   'use strict';
 
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Constants
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   const STORAGE_KEY = 'gamevault.data.v2';
   const LEGACY_KEY = 'gamevault.games.v1';
   const SCHEMA = 2;
+  const PAGE = 60;
 
   const PLATFORMS = ['Android', 'Windows PC', 'Steam', 'PlayStation', 'Xbox', 'Nintendo', 'Cloud gaming', 'Other'];
   const STATUSES = [
@@ -33,39 +31,48 @@
     ['launches', 'Most played'],
     ['released', 'Release date'],
   ];
-  const ACCENTS = [['violet', 'Electric violet'], ['cyan', 'Arctic cyan'], ['magenta', 'Neon magenta']];
+  const ACCENTS = [['violet', 'Electric violet', '#7c5cff'], ['cyan', 'Arctic cyan', '#22d3ee'], ['magenta', 'Neon magenta', '#f472b6']];
 
   const ICONS = {
-    home: '<path d="M3 10.8 12 3.5l9 7.3V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
-    grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3.2 1.9"/>',
-    user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.7 3.7-5.5 7.5-5.5s6.9 1.8 7.5 5.5"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
-    filter: '<path d="M4 7h16M7 12h10M10 17h4"/>',
-    back: '<path d="M15 5l-7 7 7 7"/>',
-    star: '<path d="m12 3.6 2.6 5.3 5.9.85-4.3 4.15 1.05 5.85L12 17l-5.25 2.75L7.8 13.9 3.5 9.75l5.9-.85z"/>',
-    play: '<path d="M7 4.5v15l13-7.5z"/>',
-    pencil: '<path d="M4 20h4L20 8l-4-4L4 16z"/>',
-    image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4.5 18 5-4 3.5 2.8 3-2.3 4 3.5"/>',
-    trash: '<path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.9 13h9.2l.9-13"/>',
-    folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>',
-    download: '<path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19.5h14"/>',
-    upload: '<path d="M12 20V10m0 0 4 4m-4-4-4 4M5 4.5h14"/>',
-    check: '<path d="m5 12.5 4.5 4.5L19 7"/>',
-    arrowUp: '<path d="M12 19V5m0 0-6 6m6-6 6 6"/>',
-    arrowDown: '<path d="M12 5v14m0 0 6-6m-6 6-6-6"/>',
+    home: '<path d="M3 10.7 12 3.4l9 7.3V20a1.2 1.2 0 0 1-1.2 1.2h-4.6V15H9.8v6.2H4.2A1.2 1.2 0 0 1 3 20z"/>',
+    grid: '<rect x="3.2" y="3.2" width="7.2" height="7.2" rx="2"/><rect x="13.6" y="3.2" width="7.2" height="7.2" rx="2"/><rect x="3.2" y="13.6" width="7.2" height="7.2" rx="2"/><rect x="13.6" y="13.6" width="7.2" height="7.2" rx="2"/>',
+    list: '<path d="M4 6.5h16M4 12h16M4 17.5h10"/>',
+    compact: '<rect x="3.2" y="3.2" width="5.4" height="5.4" rx="1.6"/><rect x="10.3" y="3.2" width="5.4" height="5.4" rx="1.6"/><rect x="17.4" y="3.2" width="3.4" height="5.4" rx="1.6"/><rect x="3.2" y="10.3" width="5.4" height="5.4" rx="1.6"/><rect x="10.3" y="10.3" width="5.4" height="5.4" rx="1.6"/><rect x="17.4" y="10.3" width="3.4" height="5.4" rx="1.6"/><rect x="3.2" y="17.4" width="5.4" height="3.4" rx="1.6"/><rect x="10.3" y="17.4" width="5.4" height="3.4" rx="1.6"/>',
+    plus: '<path d="M12 5.2v13.6M5.2 12h13.6"/>',
+    clock: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4v4.9l3.1 1.9"/>',
+    user: '<circle cx="12" cy="8.1" r="3.9"/><path d="M4.8 20.4c.7-3.6 3.6-5.4 7.2-5.4s6.5 1.8 7.2 5.4"/>',
+    search: '<circle cx="11" cy="11" r="6.8"/><path d="m20 20-3.9-3.9"/>',
+    filters: '<path d="M4 7.2h16M7 12h10M10 16.8h4"/>',
+    back: '<path d="M15 5.2 8.2 12l6.8 6.8"/>',
+    chevron: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',
+    star: '<path d="m12 3.6 2.6 5.3 5.9.86-4.3 4.14 1.05 5.85L12 17l-5.25 2.75L7.8 13.9 3.5 9.76l5.9-.86z"/>',
+    play: '<path d="M7.6 4.8v14.4L19.4 12z"/>',
+    pencil: '<path d="M4.5 19.5h4L20 8a2.1 2.1 0 0 0-3-3L5.5 16.5z"/>',
+    image: '<rect x="3.2" y="4.2" width="17.6" height="15.6" rx="3"/><circle cx="8.8" cy="9.8" r="1.7"/><path d="m4.6 17.8 4.9-3.9 3.4 2.7 2.9-2.2 3.8 3.4"/>',
+    trash: '<path d="M4 7h16M9.6 7V4.6h4.8V7M6.6 7l.9 13h9l.9-13"/>',
+    folder: '<path d="M3.2 7.6A2.4 2.4 0 0 1 5.6 5.2h3.3l1.9 2h7.6a2.4 2.4 0 0 1 2.4 2.4v7.2a2.4 2.4 0 0 1-2.4 2.4H5.6a2.4 2.4 0 0 1-2.4-2.4z"/>',
+    download: '<path d="M12 4.2v10m0 0 3.9-3.9M12 14.2 8.1 10.3M4.8 19.4h14.4"/>',
+    upload: '<path d="M12 19.8v-10m0 0 3.9 3.9M12 9.8 8.1 13.7M4.8 4.6h14.4"/>',
+    check: '<path d="m5 12.4 4.6 4.6L19 7.4"/>',
+    close: '<path d="M6 6l12 12M18 6 6 18"/>',
+    arrowUp: '<path d="M12 19V5m0 0-5.6 5.6M12 5l5.6 5.6"/>',
+    arrowDown: '<path d="M12 5v14m0 0 5.6-5.6M12 19l-5.6-5.6"/>',
+    settings: '<circle cx="12" cy="12" r="3.1"/><path d="M12 3.4v2.2M12 18.4v2.2M4.9 7.9l1.9 1.1M17.2 15l1.9 1.1M4.9 16.1l1.9-1.1M17.2 9l1.9-1.1"/>',
+    sparkle: '<path d="M12 3.6l1.9 4.9 4.9 1.9-4.9 1.9L12 17.2l-1.9-4.9L5.2 10.4l4.9-1.9z"/>',
+    cloud: '<path d="M7.4 18.4h9.2a3.8 3.8 0 0 0 .4-7.6 5.4 5.4 0 0 0-10.3 1.2 3.2 3.2 0 0 0 .7 6.4z"/>',
   };
 
-  const icon = (name) =>
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || '') + '</svg>';
+  const icon = (name, extra) =>
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + (extra || '') + '>' +
+    (ICONS[name] || '') + '</svg>';
 
-  /* ------------------------------------------------------------------ *
-   * Small helpers
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Utilities
+   * ==================================================================== */
 
-  const $ = (sel) => document.querySelector(sel);
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
   const esc = (value) =>
     String(value == null ? '' : value).replace(/[&<>"']/g, (c) =>
@@ -74,12 +81,11 @@
   const uid = () =>
     (window.crypto && crypto.randomUUID)
       ? crypto.randomUUID()
-      : 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+      : 'id-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
   const clampInt = (value, min, max) => {
     const n = parseInt(value, 10);
-    if (Number.isNaN(n)) return min;
-    return Math.min(max, Math.max(min, n));
+    return Number.isNaN(n) ? min : Math.min(max, Math.max(min, n));
   };
 
   const hueOf = (text) => {
@@ -101,15 +107,18 @@
   };
 
   const fmtDay = (ts) => {
+    const now = new Date();
+    if (dayKey(ts) === dayKey(now.getTime())) return 'Today';
+    if (dayKey(ts) === dayKey(now.getTime() - 864e5)) return 'Yesterday';
     const d = new Date(ts);
-    const today = new Date();
-    const yest = new Date(Date.now() - 864e5);
-    if (dayKey(ts) === dayKey(today.getTime())) return 'Today';
-    if (dayKey(ts) === dayKey(yest.getTime())) return 'Yesterday';
-    return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    return d.toLocaleDateString(undefined, {
+      month: 'long', day: 'numeric',
+      year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+    });
   };
 
   const fmtTime = (ts) => new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
   const fmtDate = (value) => {
     if (!value) return '—';
     const d = new Date(value);
@@ -127,9 +136,9 @@
     return fmtDate(ts);
   };
 
-  /* ------------------------------------------------------------------ *
-   * Artwork store (IndexedDB, with in-memory fallback)
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Artwork store
+   * ==================================================================== */
 
   const Art = (() => {
     const DB_NAME = 'gamevault-art';
@@ -152,8 +161,7 @@
     function run(mode, fn) {
       return open().then((db) => new Promise((resolve, reject) => {
         const tx = db.transaction(STORE, mode);
-        const store = tx.objectStore(STORE);
-        const request = fn(store);
+        const request = fn(tx.objectStore(STORE));
         tx.oncomplete = () => resolve(request && 'result' in request ? request.result : undefined);
         tx.onerror = () => reject(tx.error || new Error('tx failed'));
         tx.onabort = () => reject(tx.error || new Error('tx aborted'));
@@ -174,9 +182,7 @@
           const value = await run('readonly', (s) => s.get(key));
           if (value) memory.set(key, value);
           return value || null;
-        } catch (e) {
-          return null;
-        }
+        } catch (e) { return null; }
       },
       async all() {
         try {
@@ -186,11 +192,6 @@
         } catch (e) { /* ignore */ }
         return Object.fromEntries(memory);
       },
-      async remove(key) {
-        if (!key) return;
-        memory.delete(key);
-        try { await run('readwrite', (s) => s.delete(key)); } catch (e) { /* ignore */ }
-      },
       async clear() {
         memory.clear();
         try { await run('readwrite', (s) => s.clear()); } catch (e) { /* ignore */ }
@@ -198,9 +199,9 @@
     };
   })();
 
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Data
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   const DEFAULT_SETTINGS = {
     accent: 'violet',
@@ -230,53 +231,7 @@
     settings: { ...DEFAULT_SETTINGS },
   });
 
-  const ART = {}; // key -> data URL, hydrated at boot
-
-  function loadDb() {
-    let parsed = null;
-    try {
-      parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    } catch (e) {
-      parsed = null;
-    }
-    if (!parsed || typeof parsed !== 'object') return migrateLegacy();
-    const base = emptyDb();
-    return {
-      schema: SCHEMA,
-      games: Array.isArray(parsed.games) ? parsed.games.map(normalizeGame).filter(Boolean) : [],
-      collections: Array.isArray(parsed.collections) ? parsed.collections.map(normalizeCollection) : [],
-      activity: Array.isArray(parsed.activity) ? parsed.activity.slice(0, 800) : [],
-      profile: { ...base.profile, ...(parsed.profile || {}) },
-      settings: { ...base.settings, ...(parsed.settings || {}) },
-    };
-  }
-
-  function migrateLegacy() {
-    const db = emptyDb();
-    let legacy = [];
-    try {
-      legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]');
-    } catch (e) {
-      legacy = [];
-    }
-    if (Array.isArray(legacy) && legacy.length) {
-      db.games = legacy.map((g) => normalizeGame({
-        id: g.id,
-        title: g.title,
-        genres: g.genre ? [g.genre] : [],
-        platforms: g.platform ? [{ name: mapPlatform(g.platform), appId: null }] : [],
-        status: g.status === 'completed' ? 'completed' : (g.status || 'backlog'),
-        rating: g.rating || 0,
-        notes: g.notes || '',
-        addedAt: g.addedAt || Date.now(),
-        launchCount: 0,
-        lastPlayedAt: null,
-        favorite: false,
-      })).filter(Boolean);
-      db.activity = db.games.map((g) => event('added', g.title, g.id, g.addedAt));
-    }
-    return db;
-  }
+  const ART = {};
 
   function mapPlatform(name) {
     const value = String(name || '').toLowerCase();
@@ -292,7 +247,9 @@
   function normalizeGame(raw) {
     if (!raw || !raw.title) return null;
     const platforms = Array.isArray(raw.platforms) && raw.platforms.length
-      ? raw.platforms.map((p) => (typeof p === 'string' ? { name: mapPlatform(p), appId: null } : { name: mapPlatform(p.name), appId: p.appId || null }))
+      ? raw.platforms.map((p) => (typeof p === 'string'
+        ? { name: mapPlatform(p), appId: null }
+        : { name: mapPlatform(p.name), appId: p.appId || null }))
       : [];
     return {
       id: raw.id || uid(),
@@ -332,6 +289,41 @@
     };
   }
 
+  function loadDb() {
+    let parsed = null;
+    try { parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { parsed = null; }
+    if (!parsed || typeof parsed !== 'object') return migrateLegacy();
+    const base = emptyDb();
+    return {
+      schema: SCHEMA,
+      games: Array.isArray(parsed.games) ? parsed.games.map(normalizeGame).filter(Boolean) : [],
+      collections: Array.isArray(parsed.collections) ? parsed.collections.map(normalizeCollection) : [],
+      activity: Array.isArray(parsed.activity) ? parsed.activity.slice(0, 800) : [],
+      profile: { ...base.profile, ...(parsed.profile || {}) },
+      settings: { ...base.settings, ...(parsed.settings || {}) },
+    };
+  }
+
+  function migrateLegacy() {
+    const db = emptyDb();
+    let legacy = [];
+    try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]'); } catch (e) { legacy = []; }
+    if (Array.isArray(legacy) && legacy.length) {
+      db.games = legacy.map((g) => normalizeGame({
+        id: g.id,
+        title: g.title,
+        genres: g.genre ? [g.genre] : [],
+        platforms: g.platform ? [{ name: mapPlatform(g.platform), appId: null }] : [],
+        status: g.status || 'backlog',
+        rating: g.rating || 0,
+        notes: g.notes || '',
+        addedAt: g.addedAt || Date.now(),
+      })).filter(Boolean);
+      db.activity = db.games.map((g) => makeEvent('added', g.title, g.id, g.addedAt));
+    }
+    return db;
+  }
+
   let db = loadDb();
 
   function persist() {
@@ -344,31 +336,26 @@
     }
   }
 
-  function event(type, title, gameId, at, extra) {
+  function makeEvent(type, title, gameId, at, extra) {
     return { id: uid(), type, title, gameId: gameId || null, at: at || Date.now(), extra: extra || '' };
   }
 
   function logEvent(type, title, gameId, extra) {
     if (!db.settings.trackActivity) return;
-    db.activity.unshift(event(type, title, gameId, Date.now(), extra));
+    db.activity.unshift(makeEvent(type, title, gameId, Date.now(), extra));
     if (db.activity.length > 800) db.activity.length = 800;
   }
 
-  function gameById(id) {
-    return db.games.find((g) => g.id === id) || null;
-  }
-
-  function collectionById(id) {
-    return db.collections.find((c) => c.id === id) || null;
-  }
+  const gameById = (id) => db.games.find((g) => g.id === id) || null;
+  const collectionById = (id) => db.collections.find((c) => c.id === id) || null;
 
   const AUTO_COLLECTIONS = [
-    { id: 'auto-all', name: 'All Games', match: () => true },
-    { id: 'auto-favorites', name: 'Favorites', match: (g) => g.favorite },
-    { id: 'auto-recent', name: 'Recently Added', match: (g) => Date.now() - g.addedAt < 14 * 864e5 },
-    { id: 'auto-backlog', name: 'Backlog', match: (g) => g.status === 'backlog' },
-    { id: 'auto-playing', name: 'Playing', match: (g) => g.status === 'playing' },
-    { id: 'auto-completed', name: 'Completed', match: (g) => g.status === 'completed' },
+    { id: 'auto-all', name: 'All games', icon: 'grid', match: () => true },
+    { id: 'auto-favorites', name: 'Favorites', icon: 'star', match: (g) => g.favorite },
+    { id: 'auto-recent', name: 'Recently added', icon: 'sparkle', match: (g) => Date.now() - g.addedAt < 14 * 864e5 },
+    { id: 'auto-backlog', name: 'Backlog', icon: 'folder', match: (g) => g.status === 'backlog' },
+    { id: 'auto-playing', name: 'Playing', icon: 'play', match: (g) => g.status === 'playing' },
+    { id: 'auto-completed', name: 'Completed', icon: 'check', match: (g) => g.status === 'completed' },
   ];
 
   function collectionGames(id) {
@@ -377,8 +364,7 @@
       return auto ? db.games.filter(auto.match) : [];
     }
     const collection = collectionById(id);
-    if (!collection) return [];
-    return collection.gameIds.map(gameById).filter(Boolean);
+    return collection ? collection.gameIds.map(gameById).filter(Boolean) : [];
   }
 
   function collectionName(id) {
@@ -390,9 +376,9 @@
     return collection ? collection.name : 'Collection';
   }
 
-  /* ------------------------------------------------------------------ *
-   * Android bridge
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Android host
+   * ==================================================================== */
 
   const host = window.AndroidHost || null;
   const installedCache = new Set();
@@ -402,13 +388,13 @@
     if (installedCache.has(pkg)) return true;
     if (!host) return false;
     try {
-      return !!host.isInstalled(pkg);
-    } catch (e) {
-      return false;
-    }
+      const found = !!host.isInstalled(pkg);
+      if (found) installedCache.add(pkg);
+      return found;
+    } catch (e) { return false; }
   }
 
-  function gamePlatformsInstalled(game) {
+  function gameInstalled(game) {
     return (game.platforms || []).some((p) => p.appId && installedApp(p.appId));
   }
 
@@ -420,9 +406,9 @@
     } catch (e) { /* ignore */ }
   }
 
-  /* ------------------------------------------------------------------ *
-   * State + routing
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * View state
+   * ==================================================================== */
 
   const state = {
     stack: [{ screen: 'home', params: {} }],
@@ -430,6 +416,7 @@
     query: '',
     sort: db.settings.sort,
     view: db.settings.view,
+    limit: PAGE,
     filter: { platform: 'all', genre: 'all', status: 'all', favorites: false, installed: 'all', completion: 'all' },
     addTab: 'discover',
     discovery: null,
@@ -441,18 +428,18 @@
     catalogueError: '',
     catalogueQuery: '',
     reorder: false,
+    settingsSection: null,
     modalOpen: false,
     pendingArt: null,
     formPlatforms: [],
+    pendingRestore: null,
   };
 
-  const TAB_OF = {
-    home: 'home',
-    library: 'library',
-    add: 'add',
-    activity: 'activity',
-    profile: 'profile',
-  };
+  const TAB_OF = { home: 'home', library: 'library', add: 'add', activity: 'activity', profile: 'profile' };
+
+  function current() {
+    return state.stack[state.stack.length - 1];
+  }
 
   function go(screen, params) {
     state.stack.push({ screen, params: params || {} });
@@ -462,14 +449,13 @@
   }
 
   function tabTo(name) {
+    closeModal();
     if (state.activeTab === name && state.stack.length === 1) {
-      closeModal();
       window.scrollTo(0, 0);
       return;
     }
     state.stack = [{ screen: name, params: {} }];
     state.activeTab = name;
-    closeModal();
     render();
     window.scrollTo(0, 0);
   }
@@ -478,253 +464,306 @@
     if (state.modalOpen) { closeModal(); return; }
     if (state.stack.length > 1) {
       state.stack.pop();
-      state.activeTab = TAB_OF[state.stack[state.stack.length - 1].screen] || state.activeTab;
+      state.activeTab = TAB_OF[current().screen] || state.activeTab;
       render();
     }
   }
 
-  // Called by the Android activity for the hardware/gesture back button.
   window.__gvBack = () => {
     if (state.modalOpen) { closeModal(); return true; }
     if (state.stack.length > 1) { back(); return true; }
     return false;
   };
 
-  /* ------------------------------------------------------------------ *
-   * Visual parts
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Components
+   * ==================================================================== */
 
-  function artUrl(record, kind) {
+  const artUrl = (record, kind) => {
     const key = kind === 'background' ? record.backgroundKey : record.coverKey;
     if (key && ART[key]) return ART[key];
-    const remote = kind === 'background' ? record.backgroundUrl : record.coverUrl;
-    return remote || '';
+    return (kind === 'background' ? record.backgroundUrl : record.coverUrl) || '';
+  };
+
+  function artMarkup(record, opts) {
+    const o = opts || {};
+    const url = artUrl(record, o.background ? 'background' : 'cover');
+    return '<span class="art' + (o.className ? ' ' + o.className : '') + '" style="--hue:' + hueOf(record.title) + '">' +
+      (url ? '<img src="' + esc(url) + '" alt="" loading="lazy">' : '<span>' + esc(initials(record.title)) + '</span>') +
+      (o.favorite ? '<span class="art-badge">' + icon('star') + '</span>' : '') +
+      (o.status ? '<span class="art-status ' + esc(record.status) + '"><span class="dot"></span>' +
+        esc(STATUS_LABEL[record.status]) + '</span>' : '') +
+      '</span>';
   }
 
-  function coverHtml(record, extraClass) {
-    const url = artUrl(record, 'cover');
-    return '<div class="cover ' + (extraClass || '') + '" style="--hue:' + hueOf(record.title) + '">' +
-      (url ? '<img src="' + esc(url) + '" alt="" loading="lazy">' : '<span>' + esc(initials(record.title)) + '</span>') +
+  const platformNames = (game) =>
+    [...new Set((game.platforms || []).map((p) => p.name))].slice(0, 2).join(' · ');
+
+  function poster(game) {
+    return '<button class="poster" data-act="open-game" data-id="' + esc(game.id) + '" ' +
+      'aria-label="' + esc(game.title) + '">' +
+      artMarkup(game, { favorite: game.favorite }) +
+      '<span class="poster-title">' + esc(game.title) + '</span>' +
+      '<span class="poster-meta">' + esc(platformNames(game) || STATUS_LABEL[game.status]) + '</span>' +
+      '</button>';
+  }
+
+  function card(game) {
+    return '<button class="card" data-act="open-game" data-id="' + esc(game.id) + '" ' +
+      'aria-label="' + esc(game.title) + ', ' + esc(STATUS_LABEL[game.status]) + '">' +
+      artMarkup(game, { favorite: game.favorite, status: true }) +
+      '<span class="poster-title">' + esc(game.title) + '</span>' +
+      '<span class="poster-meta">' + esc(platformNames(game) || 'No platform') + '</span>' +
+      '</button>';
+  }
+
+  function row(game, trailing) {
+    return '<button class="row" data-act="open-game" data-id="' + esc(game.id) + '">' +
+      artMarkup(game, { className: 'row-art' }) +
+      '<span class="row-main">' +
+      '<span class="row-title">' + esc(game.title) + '</span>' +
+      '<span class="row-meta">' + esc([platformNames(game), game.genres && game.genres[0]].filter(Boolean).join(' · ') || 'No details') + '</span>' +
+      '<span class="row-tags"><span class="tag status ' + esc(game.status) + '">' + esc(STATUS_LABEL[game.status]) + '</span>' +
+      (game.favorite ? '<span class="tag">★ Favorite</span>' : '') + '</span>' +
+      '</span>' +
+      '<span class="row-end">' + (trailing ? '<span class="tag">' + esc(trailing) + '</span>' : '') + icon('chevron') + '</span>' +
+      '</button>';
+  }
+
+  function empty(title, body, actionLabel, action, iconName) {
+    return '<div class="empty">' +
+      '<span class="empty-icon">' + icon(iconName || 'sparkle') + '</span>' +
+      '<h3>' + esc(title) + '</h3><p>' + esc(body) + '</p>' +
+      (actionLabel && action ? '<button class="btn primary" data-act="' + esc(action) + '">' + esc(actionLabel) + '</button>' : '') +
       '</div>';
   }
 
-  function statusBadge(status) {
-    return '<span class="badge ' + esc(status) + '">' + esc(STATUS_LABEL[status] || status) + '</span>';
+  const sectionHead = (title, linkLabel, action) =>
+    '<div class="section-head"><h2>' + esc(title) + '</h2>' +
+    (linkLabel ? '<button class="section-link" data-act="' + esc(action) + '">' + esc(linkLabel) + '</button>' : '') +
+    '</div>';
+
+  const appbar = (title, sub, actions, leading) =>
+    '<header class="appbar">' +
+    (leading || '') +
+    '<div class="appbar-main"><h1>' + esc(title) + '</h1>' +
+    (sub ? '<p class="sub">' + esc(sub) + '</p>' : '') + '</div>' +
+    (actions || '') +
+    '</header>';
+
+  const backBtn = () => '<button class="iconbtn plain" data-act="back" aria-label="Back">' + icon('back') + '</button>';
+
+  const statStrip = (items) =>
+    '<div class="statstrip">' + items.map(([label, value]) =>
+      '<div class="stat"><span class="stat-value">' + esc(value) + '</span>' +
+      '<span class="stat-label">' + esc(label) + '</span></div>').join('') + '</div>';
+
+  const tag = (text, cls) => '<span class="tag' + (cls ? ' ' + cls : '') + '">' + esc(text) + '</span>';
+
+  function skeletonGrid(count) {
+    return '<div class="grid">' + Array.from({ length: count }).map(() =>
+      '<div><div class="sk" style="aspect-ratio:3/4"></div>' +
+      '<div class="sk line" style="width:80%;margin-top:8px"></div></div>').join('') + '</div>';
   }
 
-  function starsHtml(rating, interactive, gameId) {
-    if (interactive) {
-      let out = '<div class="star-picker" role="group" aria-label="Personal rating">';
-      for (let i = 1; i <= 5; i++) {
-        out += '<button type="button" class="' + (i <= rating ? 'on' : '') + '" data-act="rate" data-id="' +
-          esc(gameId) + '" data-value="' + i + '" aria-label="' + i + ' star' + (i > 1 ? 's' : '') + '">★</button>';
-      }
-      return out + '</div>';
-    }
-    if (!rating) return '<span class="muted">Unrated</span>';
-    return '<span class="stars" aria-label="' + rating + ' of 5 stars">' + '★'.repeat(rating) +
-      '<span class="off">' + '★'.repeat(5 - rating) + '</span></span>';
+  function skeletonRows(count) {
+    return '<div class="list">' + Array.from({ length: count }).map(() =>
+      '<div class="sk row"></div>').join('') + '</div>';
   }
 
-  function gameCard(game, mode) {
-    const meta = [platformNames(game), game.genres && game.genres[0]].filter(Boolean).join(' · ');
-    return '<button type="button" class="card" data-act="open-game" data-id="' + esc(game.id) + '">' +
-      coverHtml(game) +
-      '<div class="title">' + esc(game.title) + '</div>' +
-      '<div class="meta">' + esc(meta || STATUS_LABEL[game.status]) + '</div>' +
-      '</button>';
+  function hydrateImages(root) {
+    $$('img', root || document).forEach((img) => {
+      if (img.dataset.hydrated) return;
+      img.dataset.hydrated = '1';
+      const done = () => img.classList.add('loaded');
+      if (img.complete && img.naturalWidth) done();
+      else img.addEventListener('load', done, { once: true });
+    });
   }
 
-  function platformNames(game) {
-    const names = (game.platforms || []).map((p) => p.name);
-    return [...new Set(names)].slice(0, 2).join(', ');
-  }
-
-  function gameRow(game, trailing) {
-    return '<button type="button" class="row-item" data-act="open-game" data-id="' + esc(game.id) + '">' +
-      coverHtml(game) +
-      '<div class="info"><div class="title">' + esc(game.title) + '</div>' +
-      '<div class="meta">' + esc(platformNames(game) || 'No platform') + '</div></div>' +
-      (trailing != null ? '<span class="value">' + esc(trailing) + '</span>' : statusBadge(game.status)) +
-      '</button>';
-  }
-
-  function emptyState(title, body, actionLabel, action) {
-    return '<div class="empty"><strong>' + esc(title) + '</strong>' + esc(body) +
-      (action ? '<div style="margin-top:14px"><button type="button" class="btn primary" data-act="' + esc(action) + '">' +
-        esc(actionLabel) + '</button></div>' : '') + '</div>';
-  }
-
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Screens
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   function screenHome() {
     const games = db.games;
-    const played = games.filter((g) => g.launchCount > 0).length;
+    const launches = games.reduce((n, g) => n + g.launchCount, 0);
     const completed = games.filter((g) => g.status === 'completed').length;
-    const launches = games.reduce((n, g) => n + (g.launchCount || 0), 0);
+    const playing = games.filter((g) => g.status === 'playing');
     const featured = games.slice().sort((a, b) =>
       (b.favorite - a.favorite) ||
       ((b.lastPlayedAt || 0) - (a.lastPlayedAt || 0)) ||
-      ((b.launchCount || 0) - (a.launchCount || 0)))[0];
-
-    const continuePlaying = games.filter((g) => g.status === 'playing')
-      .sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0)).slice(0, 8);
-    const recent = games.slice().sort((a, b) => b.addedAt - a.addedAt).slice(0, 8);
+      ((b.launchCount || 0) - (a.launchCount || 0)) ||
+      (b.addedAt - a.addedAt))[0];
+    const recent = games.slice().sort((a, b) => b.addedAt - a.addedAt).slice(0, 10);
     const mostPlayed = games.filter((g) => g.launchCount > 0)
       .sort((a, b) => b.launchCount - a.launchCount).slice(0, 3);
-    const favCollections = db.collections.filter((c) => c.favorite).slice(0, 6);
-    const favoriteGames = games.filter((g) => g.favorite).slice(0, 8);
+    const favCollections = db.collections.filter((c) => c.favorite).slice(0, 4);
+    const favoriteGames = games.filter((g) => g.favorite).slice(0, 10);
+    const name = db.profile.username || 'Player One';
+    const avatarUrl = db.profile.avatarKey && ART[db.profile.avatarKey];
 
-    const userName = db.profile.username || 'Player One';
-
-    let html = '<div class="screen"><div class="hello">' +
-      '<div class="eyebrow">GameVault</div>' +
-      '<h1>Welcome back,<br>' + esc(userName) + '</h1>' +
-      '<div class="stats-row">' +
-      statTile('Total', games.length) +
-      statTile('Played', played) +
-      statTile('Completed', completed) +
-      statTile('Launches', launches) +
-      '</div></div><div class="content">';
+    let html = '<div class="screen"><div class="intro">' +
+      '<div class="intro-top"><div>' +
+      '<p class="overline" style="margin:0">GameVault</p>' +
+      '<h1 class="display">Welcome back, ' + esc(name) + '</h1>' +
+      '</div><button class="avatar" data-act="tab-profile" aria-label="Open profile">' +
+      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="">' : esc(initials(name))) + '</button></div>' +
+      statStrip([
+        ['Games', games.length],
+        ['Playing', playing.length],
+        ['Done', completed],
+        ['Launches', launches],
+      ]) +
+      '</div><div class="wrap" style="margin-top:' + (games.length ? '20px' : '4px') + '">';
 
     if (!games.length) {
-      html += '<div class="section">' + emptyState(
-        'Your vault is empty',
-        'Add a game from your device, search the online catalogue, or create one manually.',
-        'Add your first game', 'tab-add') + '</div>' +
-        '<div class="section"><div class="quick">' +
-        '<button type="button" class="quick-tile accent" data-act="tab-add">' + icon('plus') + 'Add games</button>' +
-        '<button type="button" class="quick-tile" data-act="open-collections">' + icon('folder') + 'Collections</button>' +
-        '</div></div></div></div>';
+      html += empty('Your vault is empty', 'Add games from your device, import them from the online catalogue, or create an entry by hand.', 'Add your first game', 'tab-add', 'plus') +
+        '<div class="tiles" style="margin-top:16px">' +
+        '<button class="tile accent" data-act="tab-add">' + icon('plus') + '<span><span class="tile-label">Add games</span></span></button>' +
+        '<button class="tile" data-act="open-collections">' + icon('folder') + '<span><span class="tile-label">Collections</span></span></button>' +
+        '</div></div></div>';
       return html;
     }
 
     if (featured) {
       const bg = artUrl(featured, 'background') || artUrl(featured, 'cover');
-      html += '<div class="section"><button type="button" class="hero" data-act="open-game" data-id="' + esc(featured.id) + '">' +
-        (bg ? '<div class="hero-art" style="background-image:url(&quot;' + esc(bg) + '&quot;)"></div>' : '') +
-        '<div class="hero-shade"></div><div class="hero-body">' +
-        '<div class="hero-kicker">Featured game</div>' +
-        '<div class="hero-title">' + esc(featured.title) + '</div>' +
-        '<div class="hero-meta">' + esc([platformNames(featured), STATUS_LABEL[featured.status]].filter(Boolean).join(' · ')) + '</div>' +
-        '<span class="hero-cta">Open details →</span>' +
-        '</div></button></div>';
+      html += '<button class="feature" style="--hue:' + hueOf(featured.title) + '" data-act="open-game" data-id="' + esc(featured.id) + '">' +
+        (bg ? '<img class="feature-art" src="' + esc(bg) + '" alt="" loading="lazy">'
+          : '<span class="feature-mark" aria-hidden="true">' + esc(initials(featured.title)) + '</span>') +
+        '<span class="feature-scrim"></span>' +
+        '<span class="feature-body">' +
+        tag(featured.status === 'playing' ? 'Continue playing' : 'Featured game') +
+        '<span class="feature-title">' + esc(featured.title) + '</span>' +
+        '<span class="feature-meta">' + esc([platformNames(featured), featured.genres && featured.genres[0]].filter(Boolean).join(' · ') || 'In your library') + '</span>' +
+        '<span class="feature-cta">' + icon('play') + 'Open game</span>' +
+        '</span></button>';
     }
 
-    if (continuePlaying.length) {
-      html += sectionHead('Continue playing', 'library', 'View library') +
-        '<div class="rail">' + continuePlaying.map((g) =>
-          '<button type="button" class="mini" data-act="open-game" data-id="' + esc(g.id) + '">' +
-          coverHtml(g) + '<div class="mini-title">' + esc(g.title) + '</div>' +
-          '<div class="mini-sub">' + esc(relTime(g.lastPlayedAt)) + '</div></button>').join('') + '</div></div>';
-    }
-
-    if (recent.length) {
-      html += sectionHead('Recently added', 'library', 'See all') +
-        '<div class="rail">' + recent.map((g) =>
-          '<button type="button" class="mini" data-act="open-game" data-id="' + esc(g.id) + '">' +
-          coverHtml(g) + '<div class="mini-title">' + esc(g.title) + '</div>' +
-          '<div class="mini-sub">' + esc(relTime(g.addedAt)) + '</div></button>').join('') + '</div></div>';
-    }
-
-    if (mostPlayed.length) {
-      html += '<div class="section">' + head('Most played') +
-        '<div class="rows">' + mostPlayed.map((g) =>
-          gameRow(g, (g.launchCount === 1 ? '1 launch' : g.launchCount + ' launches'))).join('') + '</div></div>';
+    if (playing.length) {
+      html += '<section class="section">' + sectionHead('Continue playing', 'Library', 'tab-library') +
+        '<div class="rail">' + playing
+          .sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+          .slice(0, 8).map((g) => poster(g)).join('') + '</div></section>';
     }
 
     if (favoriteGames.length) {
-      html += sectionHead('Favorite games', 'library', 'See all') +
-        '<div class="rail">' + favoriteGames.map((g) =>
-          '<button type="button" class="mini" data-act="open-game" data-id="' + esc(g.id) + '">' +
-          coverHtml(g) + '<div class="mini-title">' + esc(g.title) + '</div></button>').join('') + '</div></div>';
+      html += '<section class="section">' + sectionHead('Favorites') +
+        '<div class="rail">' + favoriteGames.map((g) => poster(g)).join('') + '</div></section>';
+    }
+
+    if (recent.length) {
+      html += '<section class="section">' + sectionHead('Recently added', 'See all', 'tab-library') +
+        '<div class="rail">' + recent.slice(0, 8).map((g) => poster(g)).join('') + '</div></section>';
+    }
+
+    if (mostPlayed.length) {
+      html += '<section class="section">' + sectionHead('Most played') +
+        '<div class="list">' + mostPlayed.map((g) =>
+          row(g, g.launchCount === 1 ? '1 launch' : g.launchCount + ' launches')).join('') + '</div></section>';
     }
 
     if (favCollections.length) {
-      html += '<div class="section">' + head('Favorite collections') + '<div class="quick">' +
-        favCollections.map((c) =>
-          '<button type="button" class="quick-tile" data-act="open-collection" data-id="' + esc(c.id) + '">' +
-          icon('folder') + esc(c.name) + '<span class="mini-sub">' + c.gameIds.length + ' games</span></button>').join('') +
-        '</div></div>';
+      html += '<section class="section">' + sectionHead('Favorite collections', 'All', 'open-collections') +
+        '<div class="rail" style="gap:12px">' + favCollections.map((c) => {
+          const first = c.gameIds.map(gameById).filter(Boolean)[0];
+          const img = c.artworkKey && ART[c.artworkKey] ? ART[c.artworkKey] : (first ? artUrl(first, 'background') || artUrl(first, 'cover') : '');
+          return '<button class="shelf" style="flex:0 0 260px;width:260px" data-act="open-collection" data-id="' + esc(c.id) + '">' +
+            (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '') +
+            (c.favorite ? '<span class="shelf-fav">' + icon('star') + '</span>' : '') +
+            '<span class="shelf-body"><span class="shelf-title">' + esc(c.name) + '</span>' +
+            '<span class="shelf-meta">' + c.gameIds.length + ' games</span></span></button>';
+        }).join('') + '</div></section>';
     }
 
-    html += '<div class="section">' + head('Quick access') + '<div class="quick">' +
-      '<button type="button" class="quick-tile accent" data-act="tab-library">' + icon('grid') + 'Full library</button>' +
-      '<button type="button" class="quick-tile" data-act="open-collections">' + icon('folder') + 'Collections</button>' +
-      '<button type="button" class="quick-tile" data-act="tab-activity">' + icon('clock') + 'Activity</button>' +
-      '<button type="button" class="quick-tile" data-act="tab-profile">' + icon('user') + 'Profile</button>' +
-      '</div></div>';
+    html += '<section class="section"><div class="tiles">' +
+      '<button class="tile accent" data-act="tab-library">' + icon('grid') +
+      '<span><span class="tile-label">Full library</span><span class="tile-sub">' + games.length + ' games</span></span></button>' +
+      '<button class="tile" data-act="open-collections">' + icon('folder') +
+      '<span><span class="tile-label">Collections</span><span class="tile-sub">' + db.collections.length + ' custom</span></span></button>' +
+      '</div></section>';
 
     return html + '</div></div>';
   }
 
-  function statTile(label, value) {
-    return '<div class="stat"><span class="stat-value">' + esc(value) + '</span>' +
-      '<span class="stat-label">' + esc(label) + '</span></div>';
-  }
-
-  function head(title) {
-    return '<div class="section-head"><h2>' + esc(title) + '</h2></div>';
-  }
-
-  function sectionHead(title, tab, linkLabel) {
-    return '<div class="section"><div class="section-head"><h2>' + esc(title) + '</h2>' +
-      '<button type="button" class="link" data-act="tab-' + esc(tab) + '">' + esc(linkLabel) + '</button></div>';
-  }
-
   function screenLibrary() {
     const items = visibleGames();
-    const rootGames = db.games.length;
     return '<div class="screen">' +
-      '<div class="screen-head"><div><h1>Library</h1>' +
-      '<div class="sub">' + rootGames + ' game' + (rootGames === 1 ? '' : 's') + ' in your vault</div></div>' +
-      '<span class="head-spacer"></span>' +
-      '<button type="button" class="icon-btn solid" data-act="tab-add" aria-label="Add game">' + icon('plus') + '</button></div>' +
-      '<div class="content"><div class="toolbar">' +
-      '<label class="search-field">' + icon('search') +
-      '<input id="lib-search" type="search" placeholder="Search titles, franchises, genres" ' +
-      'value="' + esc(state.query) + '" aria-label="Search library"></label>' +
-      '<button type="button" class="icon-btn" data-act="open-filters" aria-label="Filters">' + icon('filter') + '</button>' +
-      '</div>' +
-      '<div class="chips" style="margin-top:10px">' + statusFilterChips() + '</div>' +
-      '<div class="count-line"><span id="lib-count">' + resultLabel(items.length) + '</span>' +
-      '<span style="display:flex;gap:8px;align-items:center">' +
-      '<span class="seg" role="group" aria-label="Display mode">' + VIEWS.map(([id, label]) =>
-        '<button type="button" data-act="set-view" data-view="' + id + '" aria-pressed="' + (state.view === id) + '">' + label + '</button>').join('') +
-      '</span>' +
-      '<select id="lib-sort" aria-label="Sort games" style="width:auto;padding:8px 10px;font-size:12px">' +
-      SORTS.map(([id, label]) =>
-        '<option value="' + id + '"' + (state.sort === id ? ' selected' : '') + '>' + label + '</option>').join('') +
-      '</select></span></div>' +
-      '<div id="lib-body">' + libraryBody(items) + '</div>' +
-      '</div></div>';
+      '<div class="lib-head">' +
+      appbar('Library', db.games.length + (db.games.length === 1 ? ' game' : ' games'),
+        '<button class="iconbtn solid" data-act="tab-add" aria-label="Add game">' + icon('plus') + '</button>') +
+      '<div class="lib-bar"><div class="lib-search">' +
+      '<label class="searchbar">' + icon('search') +
+      '<input id="lib-search" type="search" placeholder="Search games" value="' + esc(state.query) + '" aria-label="Search library"></label>' +
+      '<button class="iconbtn" data-act="open-filters" aria-label="Filters and sorting">' + icon('filters') + '</button>' +
+      '</div><div class="lib-tools">' +
+      '<div class="chips" style="flex:1">' + statusChips() + '</div>' +
+      '</div></div></div>' +
+      '<div class="wrap"><div class="count-line"><span id="lib-count">' + resultLabel(items.length) + '</span>' +
+      '<span style="display:flex;align-items:center;gap:10px">' +
+      '<span>' + esc(SORTS.find((s) => s[0] === state.sort)[1]) + '</span>' +
+      '<span class="viewswitch" role="group" aria-label="Display mode">' +
+      VIEWS.map(([id, label]) =>
+        '<button data-act="set-view" data-view="' + id + '" aria-pressed="' + (state.view === id) + '" aria-label="' + label + ' view">' +
+        icon(id) + '</button>').join('') +
+      '</span></span></div>' +
+      '<div id="lib-body">' + libraryBody(items) + '</div></div></div>';
   }
 
-  function resultLabel(count) {
-    return count + ' game' + (count === 1 ? '' : 's');
-  }
+  const resultLabel = (n) => n + (n === 1 ? ' game' : ' games');
 
-  function statusFilterChips() {
-    const all = [['all', 'All']].concat(STATUSES);
-    return all.map(([id, label]) =>
-      '<button type="button" class="chip" data-act="filter-status" data-status="' + id + '" ' +
-      'aria-pressed="' + (state.filter.status === id) + '">' + esc(label) + '</button>').join('');
+  function statusChips() {
+    return [['all', 'All']].concat(STATUSES).map(([id, label]) =>
+      '<button class="chip" data-act="filter-status" data-status="' + id + '" aria-pressed="' +
+      (state.filter.status === id) + '">' + esc(label) + '</button>').join('');
   }
 
   function libraryBody(items) {
     if (!db.games.length) {
-      return emptyState('Nothing here yet', 'Add games from your device or manually to start your collection.', 'Add a game', 'tab-add');
+      return empty('Nothing here yet', 'Your collection starts with one game. Browse your device or add one manually.', 'Add a game', 'tab-add', 'plus');
     }
     if (!items.length) {
-      return emptyState('No matches', 'No games match the current search and filters.', 'Clear filters', 'clear-filters');
+      return empty('No matches', 'Nothing matches this search and filter combination.', 'Clear filters', 'clear-filters', 'search');
     }
+    const shown = items.slice(0, state.limit);
+    let html;
     if (state.view === 'list') {
-      return '<div class="rows">' + items.map((g) => gameRow(g)).join('') + '</div>';
+      html = '<div class="list">' + shown.map((g) => row(g, g.launchCount ? g.launchCount + ' ×' : '')).join('') + '</div>';
+    } else {
+      html = '<div class="grid' + (state.view === 'compact' ? ' compact' : '') + '">' +
+        shown.map((g) => card(g)).join('') + '</div>';
     }
-    return '<div class="grid' + (state.view === 'compact' ? ' compact' : '') + '">' +
-      items.map((g) => gameCard(g)).join('') + '</div>';
+    if (items.length > shown.length) {
+      html += '<div id="lib-more" class="count-line" style="justify-content:center">Loading more…</div>';
+    }
+    return html;
+  }
+
+  function refreshLibrary(resetLimit) {
+    if (resetLimit) state.limit = PAGE;
+    const items = visibleGames();
+    const body = $('#lib-body');
+    if (body) {
+      body.innerHTML = libraryBody(items);
+      hydrateImages(body);
+    }
+    const count = $('#lib-count');
+    if (count) count.textContent = resultLabel(items.length);
+    observeLibrary(items.length);
+  }
+
+  let libObserver = null;
+  function observeLibrary(total) {
+    if (libObserver) { libObserver.disconnect(); libObserver = null; }
+    const sentinel = $('#lib-more');
+    if (!sentinel || !('IntersectionObserver' in window)) return;
+    libObserver = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        state.limit += PAGE;
+        refreshLibrary(false);
+      }
+    }, { rootMargin: '500px' });
+    libObserver.observe(sentinel);
   }
 
   function sorterFor(key) {
@@ -748,8 +787,8 @@
       if (f.favorites && !g.favorite) return false;
       if (f.completion === 'completed' && g.status !== 'completed') return false;
       if (f.completion === 'incomplete' && g.status === 'completed') return false;
-      if (f.installed === 'yes' && !gamePlatformsInstalled(g)) return false;
-      if (f.installed === 'no' && gamePlatformsInstalled(g)) return false;
+      if (f.installed === 'yes' && !gameInstalled(g)) return false;
+      if (f.installed === 'no' && gameInstalled(g)) return false;
       if (q) {
         const hay = [g.title, g.franchise, g.developer, g.publisher,
           ...(g.genres || []), ...(g.platforms || []).map((p) => p.name)].join(' ').toLowerCase();
@@ -761,249 +800,286 @@
 
   function screenAdd() {
     const tabs = [['discover', 'Device'], ['catalogue', 'Catalogue'], ['manual', 'Manual']];
-    let body = '';
-
-    if (state.addTab === 'discover') body = discoverBody();
-    else if (state.addTab === 'catalogue') body = catalogueBody();
-    else body = manualBody();
+    let body;
+    if (state.addTab === 'discover') body = addDiscover();
+    else if (state.addTab === 'catalogue') body = addCatalogue();
+    else body = addManual();
 
     return '<div class="screen">' +
-      '<div class="screen-head"><div><h1>Add games</h1>' +
-      '<div class="sub">Device discovery · online catalogue · manual entry</div></div></div>' +
-      '<div class="content">' +
-      '<div class="seg seg-wide" style="margin-bottom:16px">' + tabs.map(([id, label]) =>
-        '<button type="button" data-act="add-tab" data-tab="' + id + '" aria-pressed="' + (state.addTab === id) + '">' +
-        esc(label) + '</button>').join('') + '</div>' + body + '</div></div>';
+      appbar('Add games', 'Three ways to grow your library') +
+      '<div class="wrap">' +
+      '<div class="seg">' + tabs.map(([id, label]) =>
+        '<button data-act="add-tab" data-tab="' + id + '" aria-pressed="' + (state.addTab === id) + '">' +
+        esc(label) + '</button>').join('') + '</div>' +
+      '<div style="margin-top:16px">' + body + '</div></div></div>';
   }
 
-  function discoverBody() {
+  function addDiscover() {
     if (!host) {
-      return '<div class="notice"><span>' + icon('image') + '</span><div><strong>Device discovery runs in the Android app.</strong><br>' +
-        'Installed games can be detected when GameVault runs on a device. You can still add games manually.</div></div>';
+      return '<div class="notice">' + icon('image') + '<div><strong>Device discovery runs in the Android app</strong>' +
+        'When GameVault runs on a phone it can list launchable games. Manual entry works everywhere.</div></div>' +
+        '<button class="btn block" style="margin-top:12px" data-act="add-tab" data-tab="manual">Create manually</button>';
     }
-    let html = '<div class="notice" style="margin-bottom:14px"><span>' + icon('check') + '</span><div>' +
-      '<strong>Scan your device</strong><br>Lists launchable apps so you can add them to your vault. Detection can be corrected by editing any game afterwards.</div></div>';
-    html += '<div class="toolbar" style="margin-bottom:12px">' +
-      '<button type="button" class="btn primary" data-act="discover-scan">' + icon('search') +
-      (state.discovery ? 'Rescan device' : 'Scan device') + '</button>' +
-      (state.selected.size ? '<button type="button" class="btn" data-act="discover-add">Add ' + state.selected.size + '</button>' : '') +
+    let html = '<div class="notice">' + icon('check') + '<div><strong>Scan this device</strong>' +
+      'Launchable apps are listed so you can add them. Anything misdetected can be edited afterwards.</div></div>';
+
+    html += '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn primary" style="flex:1" data-act="discover-scan">' + icon('search') +
+      (state.discovery ? 'Rescan' : 'Scan device') + '</button>' +
+      (state.selected.size ? '<button class="btn soft" data-act="discover-add">Add ' + state.selected.size + '</button>' : '') +
       '</div>';
-    if (state.discoveryBusy) {
-      return html + '<div class="rows">' + Array.from({ length: 6 }).map(() =>
-        '<div class="skeleton" style="height:68px"></div>').join('') + '</div>';
-    }
+
+    if (state.discoveryBusy) return html + '<div style="margin-top:12px">' + skeletonRows(6) + '</div>';
     if (!state.discovery) return html;
 
     const q = state.discoveryQuery.trim().toLowerCase();
     const apps = state.discovery.filter((a) => !q || a.label.toLowerCase().includes(q));
-    if (!apps.length) return html + emptyState('No apps found', 'Try a different search term.', '');
+    html += '<label class="searchbar" style="margin-top:12px">' + icon('search') +
+      '<input id="disc-search" type="search" placeholder="Search installed apps" value="' + esc(state.discoveryQuery) + '"></label>';
 
-    return html + '<label class="search-field" style="margin-bottom:12px">' + icon('search') +
-      '<input id="disc-search" type="search" placeholder="Search installed apps" value="' + esc(state.discoveryQuery) + '"></label>' +
-      '<div class="rows">' + apps.map((app) => {
-        const existing = gameForPackage(app.packageName);
-        const selected = state.selected.has(app.packageName);
-        return '<button type="button" class="discover-row' + (existing ? ' in-library' : '') + '" ' +
-          'data-act="discover-toggle" data-pkg="' + esc(app.packageName) + '" aria-pressed="' + (selected || !!existing) + '"' +
-          (existing ? ' disabled' : '') + '>' +
-          '<img class="app-icon" src="' + esc(app.icon || '') + '" alt="" loading="lazy">' +
-          '<div class="info" style="flex:1;min-width:0"><div class="title">' + esc(app.label) + '</div>' +
-          '<div class="meta">' + esc(existing ? 'Already in library' : app.packageName) + '</div></div>' +
-          '<span class="check">' + icon('check') + '</span></button>';
-      }).join('') + '</div>';
+    if (!apps.length) {
+      return html + '<div style="margin-top:12px">' + empty('No apps found', 'Try another search term.', '', '', 'search') + '</div>';
+    }
+
+    html += '<div class="list" style="margin-top:12px">' + apps.map((app) => {
+      const existing = gameForPackage(app.packageName);
+      const selected = state.selected.has(app.packageName);
+      return '<button class="discover' + (existing ? ' in-library' : '') + '" ' +
+        'data-act="discover-toggle" data-pkg="' + esc(app.packageName) + '" ' +
+        'aria-pressed="' + (selected || !!existing) + '"' + (existing ? ' disabled' : '') + '>' +
+        '<img class="app-icon" src="' + esc(app.icon || '') + '" alt="" loading="lazy">' +
+        '<span class="discover-main"><span class="discover-title">' + esc(app.label) + '</span>' +
+        '<span class="discover-sub">' + esc(existing ? 'Already in library' : app.packageName) + '</span></span>' +
+        '<span class="tick">' + icon('check') + '</span></button>';
+    }).join('') + '</div>';
+
+    return html;
   }
 
-  function gameForPackage(pkg) {
-    return db.games.find((g) => (g.platforms || []).some((p) => p.appId === pkg)) || null;
-  }
+  const gameForPackage = (pkg) =>
+    db.games.find((g) => (g.platforms || []).some((p) => p.appId === pkg)) || null;
 
-  function catalogueBody() {
+  function addCatalogue() {
     const key = (db.settings.catalogueKey || '').trim();
-    let html = '<div class="notice" style="margin-bottom:14px"><span>' + icon('search') + '</span><div>' +
-      '<strong>Online catalogue</strong><br>Search a public games database and import title, cover, description, release date, genres and companies. ' +
-      'A free RAWG API key is required.</div></div>';
+    let html = '<div class="notice">' + icon('cloud') + '<div><strong>Online catalogue</strong>' +
+      'Imports title, artwork, description, release date, genres and companies. A free RAWG API key is required.</div></div>';
 
     if (!key) {
-      html += '<form id="form-catalogue-key" class="panel" style="margin-bottom:14px">' +
-        '<div class="panel-title">Catalogue access</div>' +
-        '<label class="field"><span>RAWG API key</span>' +
+      html += '<form id="form-catalogue-key" class="panel" style="margin-top:12px">' +
+        '<div class="panel-head"><h2 class="panel-title">Catalogue access</h2></div>' +
+        '<label class="field"><span class="label">RAWG API key</span>' +
         '<input name="key" placeholder="Paste your api.rawg.io key" autocomplete="off"></label>' +
-        '<button class="btn block" type="submit">Save key</button>' +
-        '<p class="desc" style="margin:10px 0 0">Get a key at rawg.io/apidocs. It is stored only on this device and used only for catalogue requests. ' +
-        'Without a key, manual entry and your existing library keep working offline.</p></form>';
+        '<button class="btn primary block" type="submit" style="margin-top:12px">Save key</button>' +
+        '<p class="sheet-note">Stored only on this device and sent only to api.rawg.io. Without a key, manual entry and your library keep working offline.</p>' +
+        '</form>';
     } else {
-      html += '<form id="form-catalogue" class="toolbar" style="margin-bottom:14px">' +
-        '<label class="search-field">' + icon('search') +
+      html += '<form id="form-catalogue" class="lib-search" style="margin-top:12px">' +
+        '<label class="searchbar">' + icon('search') +
         '<input name="q" type="search" placeholder="Search the catalogue" value="' + esc(state.catalogueQuery) + '"></label>' +
-        '<button class="icon-btn solid" type="submit" aria-label="Search catalogue">' + icon('search') + '</button></form>';
+        '<button class="iconbtn solid" type="submit" aria-label="Search catalogue">' + icon('search') + '</button></form>';
     }
 
-    if (state.catalogueBusy) {
-      return html + '<div class="rows">' + Array.from({ length: 5 }).map(() =>
-        '<div class="skeleton" style="height:76px"></div>').join('') + '</div>';
-    }
+    if (state.catalogueBusy) return html + '<div style="margin-top:14px">' + skeletonRows(5) + '</div>';
+
     if (state.catalogueError) {
-      return html + '<div class="notice" style="border-color:rgba(251,95,108,.5)"><div><strong>Catalogue unavailable</strong><br>' +
-        esc(state.catalogueError) + ' Check your connection or add the game manually.</div></div>' +
-        '<button type="button" class="btn block" style="margin-top:12px" data-act="add-tab" data-tab="manual">Add manually instead</button>';
-    }
-    if (!state.catalogue) {
-      return html + '<div class="empty"><strong>Search the catalogue</strong>Results appear here with artwork and metadata you can import.</div>';
-    }
-    if (!state.catalogue.length) {
-      return html + emptyState('No results', 'Nothing matched that search. Try another title.', 'Create manually', 'add-tab');
+      return html + '<div class="notice error" style="margin-top:14px">' + icon('close') + '<div><strong>Catalogue unavailable</strong>' +
+        esc(state.catalogueError) + ' Check your connection, or add the game by hand.</div></div>' +
+        '<button class="btn block" style="margin-top:12px" data-act="add-tab" data-tab="manual">Add manually instead</button>';
     }
 
-    return html + '<div class="rows">' + state.catalogue.map((item, index) => {
+    if (!state.catalogue) {
+      return html + '<div style="margin-top:14px">' + empty('Search the catalogue', 'Results include artwork you can keep offline and metadata you can edit afterwards.', '', '', 'search') + '</div>';
+    }
+
+    if (!state.catalogue.length) {
+      return html + '<div style="margin-top:14px">' + empty('No results', 'Nothing matched that title. Try a shorter search or create the entry yourself.', 'Create manually', 'add-tab', 'search') + '</div>';
+    }
+
+    html += '<div class="list" style="margin-top:14px">' + state.catalogue.map((item, index) => {
       const existing = db.games.find((g) => g.title.toLowerCase() === item.title.toLowerCase());
-      return '<div class="row-item" style="cursor:default">' +
-        '<div class="cover" style="width:56px;height:56px;border-radius:12px;font-size:15px;--hue:' + hueOf(item.title) + '">' +
-        (item.image ? '<img src="' + esc(item.image) + '" alt="" loading="lazy">' : '<span>' + esc(initials(item.title)) + '</span>') + '</div>' +
-        '<div class="info" style="flex:1;min-width:0"><div class="title">' + esc(item.title) + '</div>' +
-        '<div class="meta">' + esc([item.released ? item.released.slice(0, 4) : '', (item.platforms || []).slice(0, 2).join(', ')].filter(Boolean).join(' · ')) + '</div></div>' +
-        '<button type="button" class="btn" style="min-height:38px;padding:8px 14px" data-act="catalogue-add" data-index="' + index + '">' +
+      return '<div class="result">' +
+        '<span class="art" style="--hue:' + hueOf(item.title) + ';width:54px">' +
+        (item.image ? '<img src="' + esc(item.image) + '" alt="" loading="lazy">' : '<span>' + esc(initials(item.title)) + '</span>') +
+        '</span><span class="row-main"><span class="row-title">' + esc(item.title) + '</span>' +
+        '<span class="row-meta">' + esc([item.released ? item.released.slice(0, 4) : '', (item.platforms || []).slice(0, 2).join(', ')].filter(Boolean).join(' · ')) + '</span></span>' +
+        '<button class="btn sm' + (existing ? '' : ' soft') + '" data-act="catalogue-add" data-index="' + index + '">' +
         (existing ? 'Merge' : 'Add') + '</button></div>';
     }).join('') + '</div>';
+
+    return html;
   }
 
-  function manualBody() {
+  function addManual() {
     return '<form id="form-game" class="panel">' +
-      '<input type="hidden" name="id" value="">' +
-      '<div class="sheet-head"><h2 style="font-size:17px">Manual entry</h2></div>' +
-      gameFormFields({ title: '', franchise: '', genres: [], platforms: [], status: 'backlog', rating: 0, notes: '', description: '', developer: '', publisher: '', releaseDate: '' }) +
-      '<div class="form-actions"><span class="spacer"></span>' +
-      '<button type="submit" class="btn primary">Add to library</button></div></form>';
+      '<div class="panel-head"><h2 class="panel-title">Manual entry</h2></div>' +
+      gameFields({ title: '', franchise: '', genres: [], platforms: [], status: 'backlog', rating: 0, notes: '', description: '', developer: '', publisher: '', releaseDate: '' }) +
+      '<button class="btn primary block" type="submit" style="margin-top:16px">Add to library</button></form>';
   }
 
-  function gameFormFields(values, options) {
-    const opts = options || {};
+  function gameFields(values) {
     state.formPlatforms = (values.platforms || []).map((p) => (typeof p === 'string' ? p : p.name));
     const genreText = Array.isArray(values.genres) ? values.genres.join(', ') : '';
-    return '<label class="field"><span>Title *</span><input name="title" required maxlength="120" value="' + esc(values.title) + '" placeholder="Game title"></label>' +
-      '<label class="field"><span>Franchise</span><input name="franchise" maxlength="60" value="' + esc(values.franchise) + '" placeholder="e.g. Resident Evil"></label>' +
-      '<label class="field"><span>Platforms</span><div class="chips" style="flex-wrap:wrap">' +
-      PLATFORMS.map((p) => '<button type="button" class="chip small" data-act="form-platform" data-platform="' + esc(p) + '" ' +
-        'aria-pressed="' + state.formPlatforms.includes(p) + '">' + esc(p) + '</button>').join('') + '</div></label>' +
-      '<div class="field-row">' +
-      '<label class="field"><span>Status</span><select name="status">' + STATUSES.map(([id, label]) =>
-        '<option value="' + id + '"' + (values.status === id ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label>' +
-      '<label class="field"><span>Rating</span><select name="rating">' + [0, 1, 2, 3, 4, 5].map((n) =>
-        '<option value="' + n + '"' + (values.rating === n ? ' selected' : '') + '>' + (n ? n + ' / 5' : 'Unrated') + '</option>').join('') +
-        '</select></label></div>' +
-      '<label class="field"><span>Genres</span><input name="genres" maxlength="120" value="' + esc(genreText) + '" placeholder="Action, RPG"></label>' +
-      '<div class="field-row">' +
-      '<label class="field"><span>Developer</span><input name="developer" maxlength="80" value="' + esc(values.developer) + '"></label>' +
-      '<label class="field"><span>Publisher</span><input name="publisher" maxlength="80" value="' + esc(values.publisher) + '"></label></div>' +
-      '<div class="field-row">' +
-      '<label class="field"><span>Release date</span><input name="releaseDate" type="date" value="' + esc(values.releaseDate) + '"></label>' +
-      '<label class="field"><span>Cover</span><button type="button" class="btn" data-act="change-art" data-target="cover">' +
-      (opts.coverLabel || 'Choose image') + '</button></label></div>' +
-      '<label class="field"><span>Description</span><textarea name="description" maxlength="2000" rows="3">' + esc(values.description) + '</textarea></label>' +
-      '<label class="field"><span>Personal notes</span><textarea name="notes" maxlength="2000" rows="3">' + esc(values.notes) + '</textarea></label>';
+    return '<label class="field"><span class="label">Title</span>' +
+      '<input name="title" required maxlength="120" value="' + esc(values.title) + '" placeholder="Game title"></label>' +
+      '<label class="field"><span class="label">Franchise</span>' +
+      '<input name="franchise" maxlength="60" value="' + esc(values.franchise) + '" placeholder="Optional"></label>' +
+      '<div class="field"><span class="label">Platforms</span><div class="chips wrap">' +
+      PLATFORMS.map((p) => '<button type="button" class="chip" data-act="form-platform" data-platform="' + esc(p) + '" aria-pressed="' +
+        state.formPlatforms.includes(p) + '">' + esc(p) + '</button>').join('') + '</div></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+      '<label class="field"><span class="label">Status</span><select name="status">' +
+      STATUSES.map(([id, label]) => '<option value="' + id + '"' + (values.status === id ? ' selected' : '') + '>' + label + '</option>').join('') +
+      '</select></label>' +
+      '<label class="field"><span class="label">Rating</span><select name="rating">' +
+      [0, 1, 2, 3, 4, 5].map((n) => '<option value="' + n + '"' + (values.rating === n ? ' selected' : '') + '>' + (n ? n + ' / 5' : 'Unrated') + '</option>').join('') +
+      '</select></label></div>' +
+      '<label class="field"><span class="label">Genres</span>' +
+      '<input name="genres" maxlength="120" value="' + esc(genreText) + '" placeholder="Action, RPG"></label>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+      '<label class="field"><span class="label">Developer</span><input name="developer" maxlength="80" value="' + esc(values.developer) + '"></label>' +
+      '<label class="field"><span class="label">Publisher</span><input name="publisher" maxlength="80" value="' + esc(values.publisher) + '"></label></div>' +
+      '<label class="field"><span class="label">Release date</span><input name="releaseDate" type="date" value="' + esc(values.releaseDate) + '"></label>' +
+      '<div class="field"><span class="label">Cover artwork</span>' +
+      '<button type="button" class="btn block" data-act="change-art" data-target="cover">' + icon('image') + 'Choose image</button></div>' +
+      '<label class="field"><span class="label">Description</span>' +
+      '<textarea name="description" maxlength="2000" rows="3">' + esc(values.description) + '</textarea></label>' +
+      '<label class="field"><span class="label">Personal notes</span>' +
+      '<textarea name="notes" maxlength="2000" rows="3">' + esc(values.notes) + '</textarea></label>';
   }
 
   function screenGame(params) {
     const game = gameById(params.id);
-    if (!game) return '<div class="screen"><div class="content" style="padding-top:40px">' +
-      emptyState('Game not found', 'This entry no longer exists.', 'Back to library', 'tab-library') + '</div></div>';
+    if (!game) {
+      return '<div class="screen">' + appbar('Not found', '', '', backBtn()) +
+        '<div class="wrap">' + empty('Game not found', 'This entry no longer exists in your library.', 'Back to library', 'tab-library', 'search') + '</div></div>';
+    }
 
     const cover = artUrl(game, 'cover');
     const bg = artUrl(game, 'background') || cover;
     const launchable = (game.platforms || []).find((p) => p.appId && installedApp(p.appId));
-
-    return '<div class="screen">' +
-      '<div class="detail-hero">' +
-      '<div class="top-actions"><button type="button" class="icon-btn" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
-      '<button type="button" class="icon-btn" data-act="edit-game" data-id="' + esc(game.id) + '" aria-label="Edit game">' + icon('pencil') + '</button></div>' +
-      (bg ? '<div class="hero-art" style="background-image:url(&quot;' + esc(bg) + '&quot;)"></div>' : '') +
-      '<div class="hero-shade"></div>' +
-      '<div class="detail-head">' + coverHtml(game) +
-      '<div class="titles"><h1>' + esc(game.title) + '</h1>' +
-      '<div class="meta">' + esc([game.franchise, platformNames(game)].filter(Boolean).join(' · ') || 'No platform') + '</div>' +
-      '<div class="row" style="margin-top:8px;display:flex;gap:8px;align-items:center">' +
-      statusBadge(game.status) + (game.favorite ? '<span class="badge">★ Favorite</span>' : '') +
-      (game.wishlist ? '<span class="badge">Wishlist</span>' : '') + '</div></div></div></div>' +
-
-      '<div class="content">' +
-      '<div class="panel" style="margin-top:16px"><div class="panel-title">Status</div>' +
-      '<div class="status-row">' + STATUSES.map(([id, label]) =>
-        '<button type="button" class="chip' + (game.status === id ? '' : '') + '" data-act="set-status" data-id="' + esc(game.id) +
-        '" data-status="' + id + '" aria-pressed="' + (game.status === id) + '">' + esc(label) + '</button>').join('') + '</div></div>' +
-
-      '<div class="panel" style="margin-top:12px"><div class="panel-title">Personal</div>' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
-      '<span style="font-size:13.5px;color:var(--muted)">Your rating</span>' + starsHtml(game.rating, true, game.id) + '</div>' +
-      '<dl class="kv"><dt>Added</dt><dd>' + esc(fmtDate(game.addedAt)) + '</dd>' +
-      '<dt>Last played</dt><dd>' + esc(relTime(game.lastPlayedAt)) + '</dd>' +
-      '<dt>Launch count</dt><dd>' + esc(game.launchCount) + '</dd></dl>' +
-      '<div class="action-grid" style="margin-top:14px">' +
-      '<button type="button" class="btn" data-act="toggle-fav" data-id="' + esc(game.id) + '" aria-pressed="' + game.favorite + '">' +
-      '★ ' + (game.favorite ? 'Favorite' : 'Add favorite') + '</button>' +
-      '<button type="button" class="btn" data-act="toggle-wish" data-id="' + esc(game.id) + '" aria-pressed="' + game.wishlist + '">' +
-      (game.wishlist ? 'On wishlist' : 'Add to wishlist') + '</button>' +
-      '<button type="button" class="btn" data-act="toggle-profile-fav" data-id="' + esc(game.id) + '">' + icon('star') +
-      ((db.profile.favoriteGameIds || []).includes(game.id) ? 'Profile pick' : 'On profile') + '</button>' +
-      (launchable ? '<button type="button" class="btn primary" data-act="launch" data-id="' + esc(game.id) + '">' + icon('play') + 'Launch</button>' : '') +
-      '<button type="button" class="btn" data-act="add-to-collection" data-id="' + esc(game.id) + '">' + icon('folder') + 'Collection</button>' +
-      '<button type="button" class="btn" data-act="change-art" data-target="cover" data-id="' + esc(game.id) + '">' + icon('image') + 'Cover</button>' +
-      '<button type="button" class="btn" data-act="change-art" data-target="background" data-id="' + esc(game.id) + '">' + icon('image') + 'Backdrop</button>' +
-      '</div></div>' +
-
-      '<div class="panel" style="margin-top:12px"><div class="panel-title">Platform versions</div>' +
-      '<div class="plat-list">' + (game.platforms || []).map((p, i) =>
-        '<span class="chip small">' + esc(p.name) + (p.appId && installedApp(p.appId) ? ' · installed' : '') +
-        ' <button type="button" data-act="remove-platform" data-id="' + esc(game.id) + '" data-index="' + i +
-        '" aria-label="Remove ' + esc(p.name) + '" style="border:0;background:none;color:var(--muted);padding:0 0 0 4px">×</button></span>').join('') +
-      '<button type="button" class="chip small" data-act="add-platform" data-id="' + esc(game.id) + '">+ Add version</button></div></div>' +
-
-      gameInfoPanel(game) +
-      (game.notes ? '<div class="panel" style="margin-top:12px"><div class="panel-title">Notes</div>' +
-        '<p class="desc" style="white-space:pre-wrap;margin:0">' + esc(game.notes) + '</p></div>' : '') +
-
-      '<div class="actions" style="margin-top:18px">' +
-      '<button type="button" class="btn danger" data-act="delete-game" data-id="' + esc(game.id) + '">' + icon('trash') + 'Remove from library</button>' +
-      '</div></div></div>';
-  }
-
-  function gameInfoPanel(game) {
-    const rows = [
-      ['Description', game.description],
+    const onProfile = (db.profile.favoriteGameIds || []).includes(game.id);
+    const inCollections = db.collections.filter((c) => c.gameIds.includes(game.id));
+    const metaRows = [
       ['Developer', game.developer],
       ['Publisher', game.publisher],
-      ['Release date', game.releaseDate ? fmtDate(game.releaseDate) : ''],
+      ['Released', game.releaseDate ? fmtDate(game.releaseDate) : ''],
       ['Genres', (game.genres || []).join(', ')],
+      ['Franchise', game.franchise],
     ].filter(([, value]) => value);
-    if (!rows.length) return '';
-    return '<div class="panel" style="margin-top:12px"><div class="panel-title">About the game</div>' +
-      (game.description ? '<p class="desc" style="margin:0 0 12px">' + esc(game.description) + '</p>' : '') +
-      '<dl class="kv">' + rows.filter(([label]) => label !== 'Description').map(([label, value]) =>
-        '<dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd>').join('') + '</dl></div>';
+
+    return '<div class="screen"><div class="hero' + (bg ? '' : ' no-art') + '">' +
+      '<div class="hero-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy">' : '') + '</div>' +
+      '<div class="hero-top"><button class="iconbtn glass" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
+      '<div style="display:flex;gap:8px">' +
+      '<button class="iconbtn glass" data-act="toggle-fav" data-id="' + esc(game.id) + '" aria-pressed="' + game.favorite + '" aria-label="Favorite">' + icon('star') + '</button>' +
+      '<button class="iconbtn glass" data-act="edit-game" data-id="' + esc(game.id) + '" aria-label="Edit game">' + icon('pencil') + '</button>' +
+      '</div></div>' +
+      '<div class="hero-card"><div class="hero-cover">' + artMarkup(game) + '</div>' +
+      '<div class="hero-info"><span class="tag status ' + esc(game.status) + '">' + esc(STATUS_LABEL[game.status]) + '</span>' +
+      '<h1>' + esc(game.title) + '</h1>' +
+      '<div class="hero-sub">' + esc([game.franchise, platformNames(game)].filter(Boolean).join(' · ') || 'No platform set') + '</div>' +
+      '<div class="hero-tags">' + (game.favorite ? tag('★ Favorite') : '') +
+      (game.wishlist ? tag('Wishlist') : '') + (onProfile ? tag('Profile pick') : '') +
+      (launchable ? tag('Installed') : '') + '</div></div></div></div>' +
+
+      '<div class="wrap"><div class="detail-layout" style="margin-top:20px">' +
+      '<div class="detail-side">' +
+
+      '<div class="panel"><div class="panel-head"><h2 class="panel-title">Your status</h2></div>' +
+      '<div class="status-row">' + STATUSES.map(([id, label]) =>
+        '<button class="chip" data-act="set-status" data-id="' + esc(game.id) + '" data-status="' + id +
+        '" aria-pressed="' + (game.status === id) + '">' + esc(label) + '</button>').join('') + '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">' +
+      '<span class="caption">Your rating</span>' +
+      '<span class="starpick">' + [1, 2, 3, 4, 5].map((n) =>
+        '<button class="' + (n <= game.rating ? 'on' : '') + '" data-act="rate" data-id="' + esc(game.id) +
+        '" data-value="' + n + '" aria-label="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>').join('') +
+      '</span></div>' +
+      '<div class="facts" style="margin-top:16px">' +
+      '<div><div class="fact-label">Added</div><div class="fact-value">' + esc(relTime(game.addedAt)) + '</div></div>' +
+      '<div><div class="fact-label">Last played</div><div class="fact-value">' + esc(relTime(game.lastPlayedAt)) + '</div></div>' +
+      '<div><div class="fact-label">Launches</div><div class="fact-value">' + esc(game.launchCount) + '</div></div>' +
+      '</div></div>' +
+
+      '<div class="panel"><div class="panel-head"><h2 class="panel-title">Actions</h2></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+      (launchable ? '<button class="btn primary" data-act="launch" data-id="' + esc(game.id) + '">' + icon('play') + 'Launch</button>' : '') +
+      '<button class="btn" data-act="add-to-collection" data-id="' + esc(game.id) + '">' + icon('folder') + 'Collection</button>' +
+      '<button class="btn" data-act="toggle-wish" data-id="' + esc(game.id) + '" aria-pressed="' + game.wishlist + '">' +
+      (game.wishlist ? 'On wishlist' : 'Wishlist') + '</button>' +
+      '<button class="btn" data-act="toggle-profile-fav" data-id="' + esc(game.id) + '">' + icon('star') +
+      (onProfile ? 'Profile pick' : 'Add to profile') + '</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:8px">' +
+      '<button class="btn ghost sm" style="flex:1" data-act="change-art" data-target="cover" data-id="' + esc(game.id) + '">' + icon('image') + 'Cover</button>' +
+      '<button class="btn ghost sm" style="flex:1" data-act="change-art" data-target="background" data-id="' + esc(game.id) + '">' + icon('image') + 'Backdrop</button>' +
+      '</div></div>' +
+
+      '<div class="panel"><div class="panel-head"><h2 class="panel-title">Platform versions</h2>' +
+      '<button class="section-link" data-act="add-platform" data-id="' + esc(game.id) + '">Add</button></div>' +
+      '<div class="platform-list">' + (game.platforms || []).map((p, i) =>
+        '<span class="platform' + (p.appId && installedApp(p.appId) ? ' installed' : '') + '">' + esc(p.name) +
+        '<button class="x" data-act="remove-platform" data-id="' + esc(game.id) + '" data-index="' + i +
+        '" aria-label="Remove ' + esc(p.name) + '">' + icon('close') + '</button></span>').join('') +
+      (!game.platforms || !game.platforms.length ? '<span class="caption">No versions yet</span>' : '') +
+      '</div></div>' +
+
+      '</div><div class="detail-side">' +
+
+      (game.description || metaRows.length
+        ? '<div class="panel"><div class="panel-head"><h2 class="panel-title">About the game</h2></div>' +
+          (game.description ? '<p class="prose">' + esc(game.description) + '</p>' : '') +
+          (metaRows.length ? '<dl class="meta-list" style="margin-top:' + (game.description ? '16px' : '0') + '">' +
+            metaRows.map(([label, value]) => '<div class="meta-row"><dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd></div>').join('') +
+            '</dl>' : '') + '</div>'
+        : '') +
+
+      (game.notes
+        ? '<div class="panel"><div class="panel-head"><h2 class="panel-title">Your notes</h2></div>' +
+          '<p class="prose">' + esc(game.notes) + '</p></div>'
+        : '') +
+
+      (inCollections.length
+        ? '<div class="panel"><div class="panel-head"><h2 class="panel-title">Collections</h2></div>' +
+          '<div class="chips wrap">' + inCollections.map((c) =>
+            '<button class="chip" data-act="open-collection" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button>').join('') +
+          '</div></div>'
+        : '') +
+
+      '<div class="panel"><button class="btn danger block" data-act="delete-game" data-id="' + esc(game.id) + '">' +
+      icon('trash') + 'Remove from library</button></div>' +
+
+      '</div></div></div></div>';
   }
 
   function screenCollections() {
-    const userCollections = db.collections;
+    const shelves = db.collections;
     return '<div class="screen">' +
-      '<div class="screen-head"><button type="button" class="icon-btn" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
-      '<div><h1>Collections</h1><div class="sub">Group your games your way</div></div></div>' +
-      '<div class="content">' +
-      '<button type="button" class="btn primary block" data-act="new-collection">' + icon('plus') + 'New collection</button>' +
-      '<div class="section">' + head('Smart collections') + '<div class="quick">' +
-      AUTO_COLLECTIONS.map((auto) => {
+      appbar('Collections', shelves.length + (shelves.length === 1 ? ' custom collection' : ' custom collections'), '', backBtn()) +
+      '<div class="wrap">' +
+      '<button class="btn primary block" data-act="new-collection">' + icon('plus') + 'New collection</button>' +
+
+      '<section class="section">' + sectionHead('Smart collections') +
+      '<div class="smart-grid">' + AUTO_COLLECTIONS.map((auto) => {
         const count = db.games.filter(auto.match).length;
-        return '<button type="button" class="quick-tile" data-act="open-collection" data-id="' + auto.id + '">' +
-          icon('folder') + esc(auto.name) + '<span class="mini-sub">' + count + ' game' + (count === 1 ? '' : 's') + '</span></button>';
-      }).join('') + '</div></div>' +
-      '<div class="section">' + head('Your collections') +
-      (userCollections.length
-        ? '<div class="rows">' + userCollections.map((c) =>
-          '<button type="button" class="row-item" data-act="open-collection" data-id="' + esc(c.id) + '">' +
-          '<div class="cover" style="width:56px;height:56px;border-radius:12px;--hue:' + hueOf(c.name) + '">' +
-          (c.artworkKey && ART[c.artworkKey] ? '<img src="' + esc(ART[c.artworkKey]) + '" alt="">' : '<span>' + esc(initials(c.name)) + '</span>') +
-          '</div><div class="info"><div class="title">' + esc(c.name) + (c.favorite ? ' ★' : '') + '</div>' +
-          '<div class="meta">' + c.gameIds.length + ' game' + (c.gameIds.length === 1 ? '' : 's') + '</div></div>' +
-          '<span class="value">' + icon('arrowUp') + '</span></button>').join('') + '</div>'
-        : emptyState('No collections yet', 'Create a collection to group games by franchise, mood or anything else.', '', '')) +
-      '</div></div></div>';
+        return '<button class="smart" data-act="open-collection" data-id="' + auto.id + '">' + icon(auto.icon) +
+          '<span class="smart-text"><span class="smart-name">' + esc(auto.name) + '</span>' +
+          '<span class="smart-count">' + count + ' games</span></span></button>';
+      }).join('') + '</div></section>' +
+
+      '<section class="section">' + sectionHead('Your shelves') +
+      (shelves.length ? '<div class="shelves">' + shelves.map((c) => {
+        const first = c.gameIds.map(gameById).filter(Boolean)[0];
+        const img = c.artworkKey && ART[c.artworkKey] ? ART[c.artworkKey]
+          : (first ? artUrl(first, 'background') || artUrl(first, 'cover') : '');
+        return '<button class="shelf" data-act="open-collection" data-id="' + esc(c.id) + '">' +
+          (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '') +
+          (c.favorite ? '<span class="shelf-fav">' + icon('star') + '</span>' : '') +
+          '<span class="shelf-body"><span class="shelf-title">' + esc(c.name) + '</span>' +
+          '<span class="shelf-meta">' + c.gameIds.length + (c.gameIds.length === 1 ? ' game' : ' games') + '</span></span></button>';
+      }).join('') + '</div>'
+        : empty('No custom collections', 'Group games into shelves by franchise, mood or completion plan.', '', '', 'folder')) +
+      '</section></div></div>';
   }
 
   function screenCollection(params) {
@@ -1011,38 +1087,71 @@
     const isAuto = id.startsWith('auto-');
     const collection = isAuto ? null : collectionById(id);
     if (!isAuto && !collection) {
-      return '<div class="screen"><div class="content" style="padding-top:40px">' +
-        emptyState('Collection not found', 'It may have been deleted.', 'Collections', 'open-collections') + '</div></div>';
+      return '<div class="screen">' + appbar('Collection', '', backBtn()) +
+        '<div class="wrap">' + empty('Collection not found', 'It may have been deleted.', 'Back', 'open-collections', 'folder') + '</div></div>';
     }
     const games = collectionGames(id);
-    const name = collectionName(id);
+
+    let actions = '';
+    if (collection) {
+      actions = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">' +
+        '<button class="btn sm" data-act="fav-collection" data-id="' + esc(id) + '">' + icon('star') + (collection.favorite ? 'Starred' : 'Star') + '</button>' +
+        '<button class="btn sm" data-act="rename-collection" data-id="' + esc(id) + '">' + icon('pencil') + 'Rename</button>' +
+        '<button class="btn sm" data-act="collection-art" data-id="' + esc(id) + '">' + icon('image') + 'Artwork</button>' +
+        '<button class="btn sm" data-act="collection-add" data-id="' + esc(id) + '">' + icon('plus') + 'Games</button>' +
+        '<button class="btn sm" data-act="reorder-toggle">' + (state.reorder ? 'Done' : 'Reorder') + '</button>' +
+        '<button class="btn sm danger" data-act="delete-collection" data-id="' + esc(id) + '">' + icon('trash') + 'Delete</button>' +
+        '</div>';
+    }
+
+    let body;
+    if (!games.length) {
+      body = empty('No games here', 'Add games to this collection to see them together.', 'Browse library', 'tab-library', 'folder');
+    } else if (state.reorder && collection) {
+      body = '<div class="list">' + games.map((g, i) =>
+        '<div class="row" style="cursor:default"><span class="row-main"><span class="row-title">' + esc(g.title) + '</span></span>' +
+        '<button class="iconbtn plain" data-act="move-game" data-id="' + esc(id) + '" data-index="' + i + '" data-dir="-1" aria-label="Move up">' + icon('arrowUp') + '</button>' +
+        '<button class="iconbtn plain" data-act="move-game" data-id="' + esc(id) + '" data-index="' + i + '" data-dir="1" aria-label="Move down">' + icon('arrowDown') + '</button>' +
+        '<button class="iconbtn plain" data-act="collection-remove" data-id="' + esc(id) + '" data-game="' + esc(g.id) + '" aria-label="Remove">' + icon('close') + '</button>' +
+        '</div>').join('') + '</div>';
+    } else {
+      body = '<div class="grid">' + games.map((g) => card(g)).join('') + '</div>';
+    }
 
     return '<div class="screen">' +
-      '<div class="screen-head"><button type="button" class="icon-btn" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
-      '<div><h1>' + esc(name) + '</h1><div class="sub">' + games.length + ' game' + (games.length === 1 ? '' : 's') + '</div></div></div>' +
-      '<div class="content">' +
-      (collection ? '<div class="action-grid" style="margin-bottom:14px">' +
-        '<button type="button" class="btn" data-act="fav-collection" data-id="' + esc(id) + '">' +
-        '★ ' + (collection.favorite ? 'Favorited' : 'Favorite') + '</button>' +
-        '<button type="button" class="btn" data-act="rename-collection" data-id="' + esc(id) + '">' + icon('pencil') + 'Rename</button>' +
-        '<button type="button" class="btn" data-act="collection-art" data-id="' + esc(id) + '">' + icon('image') + 'Artwork</button>' +
-        '<button type="button" class="btn" data-act="collection-add" data-id="' + esc(id) + '">' + icon('plus') + 'Add games</button>' +
-        '<button type="button" class="btn" data-act="reorder-toggle">' + icon('arrowUp') + (state.reorder ? 'Done' : 'Reorder') + '</button>' +
-        '<button type="button" class="btn danger" data-act="delete-collection" data-id="' + esc(id) + '">' + icon('trash') + 'Delete</button>' +
-        '</div>' : '') +
-      (games.length
-        ? (state.reorder && collection
-          ? '<div class="rows">' + games.map((g, i) =>
-            '<div class="row-item" style="cursor:default"><div class="info"><div class="title">' + esc(g.title) + '</div></div>' +
-            '<button type="button" class="icon-btn" data-act="move-game" data-id="' + esc(id) + '" data-index="' + i + '" data-dir="-1" aria-label="Move up">' + icon('arrowUp') + '</button>' +
-            '<button type="button" class="icon-btn" data-act="move-game" data-id="' + esc(id) + '" data-index="' + i + '" data-dir="1" aria-label="Move down">' + icon('arrowDown') + '</button>' +
-            '<button type="button" class="icon-btn" data-act="collection-remove" data-id="' + esc(id) + '" data-game="' + esc(g.id) + '" aria-label="Remove">×</button></div>').join('') + '</div>'
-          : '<div class="grid">' + games.map((g) => gameCard(g)).join('') + '</div>')
-        : emptyState('No games here', 'Add games to this collection to see them together.', 'Browse library', 'tab-library')) +
-      '</div></div>';
+      appbar(collectionName(id), games.length + (games.length === 1 ? ' game' : ' games'), '', backBtn()) +
+      '<div class="wrap">' + actions + body + '</div></div>';
   }
 
+  const EVENT_META = {
+    added: { icon: 'plus', text: (t) => 'Added <b>' + esc(t) + '</b> to the library' },
+    launched: { icon: 'play', text: (t) => 'Launched <b>' + esc(t) + '</b>' },
+    completed: { icon: 'check', text: (t) => 'Completed <b>' + esc(t) + '</b>' },
+    status: { icon: 'clock', text: (t, extra) => 'Moved <b>' + esc(t) + '</b> to ' + esc(STATUS_LABEL[extra] || extra) },
+    removed: { icon: 'trash', text: (t) => 'Removed <b>' + esc(t) + '</b>' },
+    artwork: { icon: 'image', text: (t) => 'Updated artwork for <b>' + esc(t) + '</b>' },
+    collection: { icon: 'folder', text: (t) => 'Added <b>' + esc(t) + '</b> to a collection' },
+  };
+
   function screenActivity() {
+    const games = db.games;
+    const launches = games.reduce((n, g) => n + g.launchCount, 0);
+    const played = games.filter((g) => g.launchCount > 0).length;
+    const completed = games.filter((g) => g.status === 'completed').length;
+    const completion = games.length ? Math.round((completed / games.length) * 100) : 0;
+
+    const countBy = (fn) => {
+      const out = {};
+      games.forEach((g) => fn(g).forEach((key) => { if (key) out[key] = (out[key] || 0) + 1; }));
+      return out;
+    };
+    const platforms = countBy((g) => (g.platforms || []).map((p) => p.name));
+    const genres = countBy((g) => g.genres || []);
+    const maxOf = (obj) => Math.max(1, ...Object.values(obj));
+    const chart = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, n]) =>
+      '<div class="chart-row"><div class="chart-head"><span>' + esc(name) + '</span><span class="n">' + n + '</span></div>' +
+      '<div class="chart-track"><span class="chart-fill" style="width:' + Math.round((n / maxOf(obj)) * 100) + '%"></span></div></div>').join('');
+
     const groups = new Map();
     db.activity.forEach((e) => {
       const key = dayKey(e.at);
@@ -1050,193 +1159,231 @@
       groups.get(key).push(e);
     });
 
-    const launches = db.games.reduce((n, g) => n + g.launchCount, 0);
-    const played = db.games.filter((g) => g.launchCount > 0).length;
-    const completed = db.games.filter((g) => g.status === 'completed').length;
-    const completion = db.games.length ? Math.round((completed / db.games.length) * 100) : 0;
-
-    const platformCounts = {};
-    db.games.forEach((g) => (g.platforms || []).forEach((p) => {
-      platformCounts[p.name] = (platformCounts[p.name] || 0) + 1;
-    }));
-    const genreCounts = {};
-    db.games.forEach((g) => (g.genres || []).forEach((name) => {
-      genreCounts[name] = (genreCounts[name] || 0) + 1;
-    }));
-
-    const total = Math.max(1, ...Object.values(platformCounts), ...Object.values(genreCounts));
-    const bars = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) =>
-      '<div class="bar-row"><div class="bar-head"><span>' + esc(name) + '</span><span class="val">' + count + '</span></div>' +
-      '<div class="bar"><span style="width:' + Math.round((count / total) * 100) + '%"></span></div></div>').join('');
-
-    let timeline = '';
+    let timeline;
     if (!db.activity.length) {
-      timeline = emptyState('No activity yet', 'Adding, launching and completing games will appear here.', 'Add a game', 'tab-add');
+      timeline = empty('No activity yet', 'Adding, launching and completing games will appear here.', 'Add a game', 'tab-add', 'clock');
     } else {
-      groups.forEach((events, key) => {
-        timeline += '<div class="day-label">' + esc(fmtDay(events[0].at)) + '</div><div class="timeline">' +
+      timeline = '';
+      groups.forEach((events) => {
+        timeline += '<div class="tl"><div class="tl-day">' + esc(fmtDay(events[0].at)) + '</div>' +
           events.map((e) => {
-            const meta = EVENT_TEXT[e.type] || { icon: '•', text: (title) => title };
-            return '<div class="event"><div class="event-dot">' + esc(meta.icon) + '</div>' +
-              '<div class="event-body"><div class="event-text">' + meta.text(e.title, e.extra) + '</div>' +
-              '<div class="event-time">' + esc(fmtTime(e.at)) + '</div></div></div>';
+            const meta = EVENT_META[e.type] || { icon: 'sparkle', text: (t) => esc(t) };
+            return '<div class="tl-item"><span class="tl-dot">' + icon(meta.icon) + '</span>' +
+              '<div class="tl-body"><div class="tl-text">' + meta.text(e.title, e.extra) + '</div>' +
+              '<div class="tl-time">' + esc(fmtTime(e.at)) + '</div></div></div>';
           }).join('') + '</div>';
       });
     }
 
-    return '<div class="screen">' +
-      '<div class="screen-head"><div><h1>Activity</h1><div class="sub">Your gaming history and statistics</div></div></div>' +
-      '<div class="content">' +
-      '<div class="stats-row">' + statTile('Launches', launches) + statTile('Played', played) +
-      statTile('Completed', completed) + statTile('Done', completion + '%') + '</div>' +
-      '<div class="section">' + head('Top games by launches') +
-      (db.games.some((g) => g.launchCount > 0)
-        ? '<div class="rows">' + db.games.filter((g) => g.launchCount > 0).sort((a, b) => b.launchCount - a.launchCount)
-          .slice(0, 5).map((g) => gameRow(g, g.launchCount + ' ×')).join('') + '</div>'
-        : '<p class="desc">No launches recorded yet. Launch a supported Android game to start tracking.</p>') + '</div>' +
-      (Object.keys(platformCounts).length ? '<div class="section">' + head('Platform distribution') +
-        '<div class="panel">' + bars(platformCounts) + '</div></div>' : '') +
-      (Object.keys(genreCounts).length ? '<div class="section">' + head('Genre distribution') +
-        '<div class="panel">' + bars(genreCounts) + '</div></div>' : '') +
-      '<div class="section">' + head('Timeline') + timeline + '</div>' +
+    return '<div class="screen">' + appbar('Activity', 'Your history, derived from recorded events') +
+      '<div class="wrap">' +
+      statStrip([['Launches', launches], ['Played', played], ['Completed', completed], ['Completion', completion + '%']]) +
+
+      '<section class="section">' + sectionHead('Most played by launches') +
+      (games.some((g) => g.launchCount > 0)
+        ? '<div class="list">' + games.filter((g) => g.launchCount > 0)
+          .sort((a, b) => b.launchCount - a.launchCount).slice(0, 5)
+          .map((g) => row(g, g.launchCount + ' ×')).join('') + '</div>'
+        : '<p class="caption">No launches recorded yet. Launch a supported Android game to start tracking.</p>') +
+      '</section>' +
+
+      (Object.keys(platforms).length ? '<section class="section">' + sectionHead('Platform distribution') +
+        '<div class="panel"><div class="chart">' + chart(platforms) + '</div></div></section>' : '') +
+      (Object.keys(genres).length ? '<section class="section">' + sectionHead('Genre distribution') +
+        '<div class="panel"><div class="chart">' + chart(genres) + '</div></div></section>' : '') +
+
+      '<section class="section">' + sectionHead('Timeline') + timeline + '</section>' +
       '</div></div>';
   }
-
-  const EVENT_TEXT = {
-    added: { icon: '＋', text: (t) => 'Added <b>' + esc(t) + '</b> to the library' },
-    launched: { icon: '▶', text: (t) => 'Launched <b>' + esc(t) + '</b>' },
-    completed: { icon: '✓', text: (t) => 'Completed <b>' + esc(t) + '</b>' },
-    status: { icon: '◐', text: (t, extra) => 'Moved <b>' + esc(t) + '</b> to ' + esc(STATUS_LABEL[extra] || extra) },
-    removed: { icon: '×', text: (t) => 'Removed <b>' + esc(t) + '</b> from the library' },
-    artwork: { icon: '▣', text: (t) => 'Updated artwork for <b>' + esc(t) + '</b>' },
-    collection: { icon: '▤', text: (t) => 'Added <b>' + esc(t) + '</b> to a collection' },
-  };
 
   function screenProfile() {
-    const profile = db.profile;
-    const avatarUrl = profile.avatarKey && ART[profile.avatarKey];
-    const favorites = (profile.favoriteGameIds || []).map(gameById).filter(Boolean);
-    const stats = {
-      total: db.games.length,
-      completed: db.games.filter((g) => g.status === 'completed').length,
-      launches: db.games.reduce((n, g) => n + g.launchCount, 0),
-    };
+    const p = db.profile;
+    const avatarUrl = p.avatarKey && ART[p.avatarKey];
+    const favorites = (p.favoriteGameIds || []).map(gameById).filter(Boolean);
+    const launches = db.games.reduce((n, g) => n + g.launchCount, 0);
+    const completed = db.games.filter((g) => g.status === 'completed').length;
 
     return '<div class="screen">' +
-      '<div class="screen-head"><div><h1>Profile</h1><div class="sub">Local profile · no account needed</div></div>' +
-      '<span class="head-spacer"></span>' +
-      '<button type="button" class="icon-btn" data-act="open-settings" aria-label="Settings">⚙</button></div>' +
-      '<div class="content">' +
-      '<div class="profile-head">' +
-      '<button type="button" class="avatar" data-act="change-avatar" aria-label="Change profile image">' +
-      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="">' : esc(initials(profile.username || 'Player One'))) + '</button>' +
-      '<div class="profile-name">' + esc(profile.username || 'Player One') + '</div>' +
-      (profile.bio ? '<div class="profile-bio">' + esc(profile.bio) + '</div>' : '') +
-      '<button type="button" class="btn" data-act="edit-profile">Edit profile</button>' +
+      appbar('Profile', 'Private · stored on this device',
+        '<button class="iconbtn" data-act="open-settings" aria-label="Settings">' + icon('settings') + '</button>') +
+      '<div class="wrap">' +
+      '<div class="profile-hero">' +
+      '<button class="avatar lg" data-act="change-avatar" aria-label="Change profile image">' +
+      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="">' : esc(initials(p.username || 'Player One'))) + '</button>' +
+      '<div class="profile-name">' + esc(p.username || 'Player One') + '</div>' +
+      (p.bio ? '<p class="profile-bio">' + esc(p.bio) + '</p>' : '') +
+      '<button class="btn sm" data-act="edit-profile">Edit profile</button>' +
       '</div>' +
-      '<div class="stats-row" style="margin-top:18px">' + statTile('Games', stats.total) +
-      statTile('Completed', stats.completed) + statTile('Launches', stats.launches) +
-      statTile('Favorite', favorites.length) + '</div>' +
-      '<div class="section">' + head('Favorite platforms') +
-      (profile.favoritePlatforms && profile.favoritePlatforms.length
-        ? '<div class="chips" style="flex-wrap:wrap">' + profile.favoritePlatforms.map((p) =>
-          '<span class="chip small">' + esc(p) + '</span>').join('') + '</div>'
-        : '<p class="desc">Pick the platforms you play most in Edit profile.</p>') + '</div>' +
-      '<div class="section">' + head('Favorite games') +
+
+      '<div style="margin-top:20px">' + statStrip([
+        ['Games', db.games.length], ['Done', completed], ['Launches', launches], ['Picks', favorites.length],
+      ]) + '</div>' +
+
+      '<section class="section">' + sectionHead('Favorite platforms') +
+      ((p.favoritePlatforms || []).length
+        ? '<div class="chips wrap">' + p.favoritePlatforms.map((x) => '<span class="chip">' + esc(x) + '</span>').join('') + '</div>'
+        : '<p class="caption">Choose the platforms you play most in your profile.</p>') +
+      '</section>' +
+
+      '<section class="section">' + sectionHead('Favorite games', 'Library', 'tab-library') +
       (favorites.length
-        ? '<div class="rail">' + favorites.map((g) =>
-          '<button type="button" class="mini" data-act="open-game" data-id="' + esc(g.id) + '">' +
-          coverHtml(g) + '<div class="mini-title">' + esc(g.title) + '</div></button>').join('') + '</div>'
-        : emptyState('No favorite games yet', 'Open a game and add it to your profile favorites.', 'Open library', 'tab-library')) + '</div>' +
-      '<div class="section"><div class="list-card">' +
-      '<button type="button" class="item" data-act="open-settings"><span class="grow">Settings<small class="hint">Appearance, library, artwork, backups</small></span><span class="value">›</span></button>' +
-      '<button type="button" class="item" data-act="open-collections"><span class="grow">Collections<small class="hint">' + db.collections.length + ' custom collection' + (db.collections.length === 1 ? '' : 's') + '</small></span><span class="value">›</span></button>' +
-      '<button type="button" class="item" data-act="tab-activity"><span class="grow">Activity<small class="hint">Timeline and statistics</small></span><span class="value">›</span></button>' +
-      '</div></div>' +
-      '</div></div>';
+        ? '<div class="rail">' + favorites.map((g) => poster(g)).join('') + '</div>'
+        : empty('No favorite games yet', 'Open a game and choose “Add to profile” to feature it here.', '', '', 'star')) +
+      '</section>' +
+
+      '<section class="section"><div class="group-card">' +
+      '<button class="setrow" data-act="open-settings"><span class="setrow-icon">' + icon('settings') + '</span>' +
+      '<span class="setrow-body"><span class="setrow-title">Settings</span>' +
+      '<span class="setrow-desc">Appearance, library, artwork, backups</span></span>' +
+      '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
+      '<button class="setrow" data-act="open-collections"><span class="setrow-icon">' + icon('folder') + '</span>' +
+      '<span class="setrow-body"><span class="setrow-title">Collections</span>' +
+      '<span class="setrow-desc">' + db.collections.length + ' custom collections</span></span>' +
+      '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
+      '<button class="setrow" data-act="tab-activity"><span class="setrow-icon">' + icon('clock') + '</span>' +
+      '<span class="setrow-body"><span class="setrow-title">Activity</span>' +
+      '<span class="setrow-desc">' + db.activity.length + ' recorded events</span></span>' +
+      '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
+      '</div></section></div></div>';
   }
+
+  const SETTINGS_SECTIONS = [
+    ['appearance', 'Appearance', 'Accent colour and motion', 'sparkle'],
+    ['library', 'Library defaults', 'View and sorting', 'grid'],
+    ['discovery', 'Discovery', 'Android detection', 'search'],
+    ['artwork', 'Artwork & catalogue', 'Automatic artwork and provider', 'image'],
+    ['activity', 'Activity tracking', 'What gets recorded', 'clock'],
+    ['storage', 'Storage & backup', 'Export, restore, delete', 'download'],
+    ['privacy', 'Privacy', 'Local data and permissions', 'check'],
+    ['about', 'About', 'Version and credits', 'sparkle'],
+  ];
 
   function screenSettings() {
-    const s = db.settings;
-    const artCount = Object.keys(ART).length;
-    return '<div class="screen">' +
-      '<div class="screen-head"><button type="button" class="icon-btn" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
-      '<div><h1>Settings</h1><div class="sub">Everything stays on this device</div></div></div>' +
-      '<div class="content">' +
-
-      '<div class="group"><div class="group-title">Appearance</div><div class="list-card">' +
-      '<div class="item"><span class="grow">Accent colour<small class="hint">Violet and cyan form the GameVault identity</small></span></div>' +
-      '<div class="item" style="gap:8px;flex-wrap:wrap">' + ACCENTS.map(([id, label]) =>
-        '<button type="button" class="chip small" data-act="set-accent" data-accent="' + id + '" aria-pressed="' + (s.accent === id) + '">' +
-        esc(label) + '</button>').join('') + '</div>' +
-      toggleItem('Reduce motion', 'Disable transitions and parallax', 'toggle-motion', s.reduceMotion) +
-      toggleItem('Haptic feedback', 'Vibrate on meaningful actions', 'toggle-haptics', s.haptics) +
-      '</div></div>' +
-
-      '<div class="group"><div class="group-title">Library</div><div class="list-card">' +
-      '<div class="item"><span class="grow">Default view</span><select data-setting="view" style="width:auto">' +
-      VIEWS.map(([id, label]) => '<option value="' + id + '"' + (s.view === id ? ' selected' : '') + '>' + label + '</option>').join('') +
-      '</select></div>' +
-      '<div class="item"><span class="grow">Default sorting</span><select data-setting="sort" style="width:auto">' +
-      SORTS.map(([id, label]) => '<option value="' + id + '"' + (s.sort === id ? ' selected' : '') + '>' + label + '</option>').join('') +
-      '</select></div></div></div>' +
-
-      '<div class="group"><div class="group-title">Discovery</div><div class="list-card">' +
-      '<div class="item"><span class="grow">Android detection<small class="hint">' +
-      (host ? 'Available · lists launchable apps on this device' : 'Only available in the Android app') + '</small></span>' +
-      '<span class="value">' + (host ? 'On' : 'Unavailable') + '</span></div>' +
-      '</div></div>' +
-
-      '<div class="group"><div class="group-title">Artwork &amp; catalogue</div><div class="list-card">' +
-      toggleItem('Automatic artwork', 'Prefer retrieved artwork unless you replaced it', 'toggle-auto-art', s.autoArtwork) +
-      '<div class="item"><span class="grow">Catalogue key<small class="hint">' +
-      (s.catalogueKey ? 'Saved on this device' : 'Not set · catalogue search disabled') + '</small></span>' +
-      '<button type="button" class="btn" style="min-height:36px;padding:6px 12px" data-act="edit-catalogue-key">' +
-      (s.catalogueKey ? 'Change' : 'Add') + '</button></div>' +
-      '<button type="button" class="item" data-act="clear-art"><span class="grow">Clear cached artwork<small class="hint">' +
-      artCount + ' image' + (artCount === 1 ? '' : 's') + ' stored offline</small></span><span class="value">›</span></button>' +
-      '</div></div>' +
-
-      '<div class="group"><div class="group-title">Activity</div><div class="list-card">' +
-      toggleItem('Track activity', 'Record adds, launches and status changes', 'toggle-track', s.trackActivity) +
-      '<button type="button" class="item" data-act="clear-activity"><span class="grow">Clear timeline<small class="hint">' +
-      db.activity.length + ' events · statistics keep their records</small></span><span class="value">›</span></button>' +
-      '</div></div>' +
-
-      '<div class="group"><div class="group-title">Storage &amp; backup</div><div class="list-card">' +
-      '<div class="item"><span class="grow">Library data<small class="hint">' + db.games.length + ' games · ' +
-      db.collections.length + ' collections · ' + artCount + ' artwork files</small></span></div>' +
-      '<button type="button" class="item" data-act="export-backup"><span class="grow">Export backup<small class="hint">Games, collections, profile and artwork in one file</small></span>' +
-      icon('download') + '</button>' +
-      '<button type="button" class="item" data-act="import-backup"><span class="grow">Restore backup<small class="hint">Replaces your current library after confirmation</small></span>' +
-      icon('upload') + '</button>' +
-      '<button type="button" class="item danger" data-act="delete-data"><span class="grow">Delete all data<small class="hint">Removes every game, collection and artwork</small></span>' +
-      icon('trash') + '</button>' + '</div></div>' +
-
-      '<div class="group"><div class="group-title">Privacy</div><div class="list-card">' +
-      '<div class="item"><span class="grow">Local-only storage<small class="hint">No account, no cloud sync. Catalogue searches send only your query to the provider you configured.</small></span></div>' +
-      '<div class="item"><span class="grow">Permissions<small class="hint">Internet (catalogue and artwork), vibration (haptics). GameVault never reads your files.</small></span></div>' +
-      '</div></div>' +
-
-      '<div class="group"><div class="group-title">About</div><div class="list-card">' +
-      '<div class="item"><span class="grow">GameVault<small class="hint">Version ' + esc(APP_VERSION()) + ' · local-first gaming library</small></span></div>' +
-      '<div class="item"><span class="grow">Catalogue provider<small class="hint">RAWG · attribution required by the provider when enabled</small></span></div>' +
-      '</div></div>' +
-
+    return '<div class="screen">' + appbar('Settings', 'Everything stays on this device', '', backBtn()) +
+      '<div class="wrap"><div class="group-card">' +
+      SETTINGS_SECTIONS.map(([id, title, desc, iconName]) =>
+        '<button class="setrow" data-act="settings-section" data-section="' + id + '">' +
+        '<span class="setrow-icon">' + icon(iconName) + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">' + esc(title) + '</span>' +
+        '<span class="setrow-desc">' + esc(desc) + '</span></span>' +
+        '<span class="setrow-end">' + icon('chevron') + '</span></button>').join('') +
+      '</div>' +
+      '<p class="sheet-note">GameVault ' + esc(APP_VERSION()) + ' · local-first · no account</p>' +
       '</div></div>';
   }
 
-  function toggleItem(title, hint, action, checked) {
-    return '<button type="button" class="item" data-act="' + action + '" role="switch" aria-checked="' + !!checked + '">' +
-      '<span class="grow">' + esc(title) + '<small class="hint">' + esc(hint) + '</small></span>' +
+  function screenSettingsSection(params) {
+    const id = params.id;
+    const s = db.settings;
+    let body = '';
+
+    if (id === 'appearance') {
+      body = '<div class="group-card">' +
+        '<div class="setrow" style="align-items:flex-start"><span class="setrow-body">' +
+        '<span class="setrow-title">Accent colour</span>' +
+        '<span class="setrow-desc">Violet and cyan define the GameVault identity</span></span></div>' +
+        '<div class="swatches">' + ACCENTS.map(([key, label, color]) =>
+          '<button class="swatch" style="background:' + color + '" data-act="set-accent" data-accent="' + key +
+          '" aria-pressed="' + (s.accent === key) + '" aria-label="' + label + '"></button>').join('') + '</div>' +
+        toggleRow('Reduce motion', 'Disable transitions and animation', 'toggle-motion', s.reduceMotion) +
+        toggleRow('Haptic feedback', 'Vibrate on meaningful actions', 'toggle-haptics', s.haptics) +
+        '</div>';
+    } else if (id === 'library') {
+      body = '<div class="group-card">' +
+        '<label class="setrow"><span class="setrow-icon">' + icon('grid') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Default view</span></span>' +
+        '<select data-setting="view" style="width:auto;min-height:38px;padding:6px 12px;font-size:13px">' +
+        VIEWS.map(([v, label]) => '<option value="' + v + '"' + (s.view === v ? ' selected' : '') + '>' + label + '</option>').join('') +
+        '</select></label>' +
+        '<label class="setrow"><span class="setrow-icon">' + icon('filters') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Default sorting</span></span>' +
+        '<select data-setting="sort" style="width:auto;min-height:38px;padding:6px 12px;font-size:13px">' +
+        SORTS.map(([v, label]) => '<option value="' + v + '"' + (s.sort === v ? ' selected' : '') + '>' + label + '</option>').join('') +
+        '</select></label></div>';
+    } else if (id === 'discovery') {
+      body = '<div class="group-card">' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('search') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Android detection</span>' +
+        '<span class="setrow-desc">' + (host ? 'Available: lists launchable apps on this device' : 'Only available in the Android app') + '</span></span>' +
+        '<span class="setrow-value">' + (host ? 'Ready' : 'Unavailable') + '</span></div>' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('check') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Duplicates</span>' +
+        '<span class="setrow-desc">Apps already in your library are shown as added and cannot be added twice</span></span></div>' +
+        '</div>';
+    } else if (id === 'artwork') {
+      body = '<div class="group-card">' +
+        toggleRow('Automatic artwork', 'Keep retrieved artwork unless you replace it', 'toggle-auto-art', s.autoArtwork) +
+        '<button class="setrow" data-act="edit-catalogue-key"><span class="setrow-icon">' + icon('cloud') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Catalogue key</span>' +
+        '<span class="setrow-desc">' + (s.catalogueKey ? 'RAWG key saved on this device' : 'Not set · online search disabled') + '</span></span>' +
+        '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
+        '<button class="setrow" data-act="clear-art"><span class="setrow-icon">' + icon('trash') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Clear cached artwork</span>' +
+        '<span class="setrow-desc">' + Object.keys(ART).length + ' images stored offline</span></span>' +
+        '<span class="setrow-end">' + icon('chevron') + '</span></button></div>';
+    } else if (id === 'activity') {
+      body = '<div class="group-card">' +
+        toggleRow('Track activity', 'Record adds, launches and status changes', 'toggle-track', s.trackActivity) +
+        '<button class="setrow" data-act="clear-activity"><span class="setrow-icon">' + icon('trash') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Clear timeline</span>' +
+        '<span class="setrow-desc">' + db.activity.length + ' events · statistics on games are kept</span></span>' +
+        '<span class="setrow-end">' + icon('chevron') + '</span></button></div>';
+    } else if (id === 'storage') {
+      body = '<div class="group-card">' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('grid') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Library data</span>' +
+        '<span class="setrow-desc">' + db.games.length + ' games · ' + db.collections.length + ' collections · ' +
+        Object.keys(ART).length + ' artworks</span></span></div>' +
+        '<button class="setrow" data-act="export-backup"><span class="setrow-icon">' + icon('download') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Export backup</span>' +
+        '<span class="setrow-desc">Games, collections, profile and artwork in one file</span></span>' +
+        '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
+        '<button class="setrow" data-act="import-backup"><span class="setrow-icon">' + icon('upload') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Restore backup</span>' +
+        '<span class="setrow-desc">Replaces your library after confirmation</span></span>' +
+        '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
+        '<button class="setrow danger" data-act="delete-data"><span class="setrow-icon">' + icon('trash') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Delete all data</span>' +
+        '<span class="setrow-desc">Removes every game, collection and artwork</span></span></button></div>';
+    } else if (id === 'privacy') {
+      body = '<div class="group-card">' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('check') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Local-only storage</span>' +
+        '<span class="setrow-desc">No account and no cloud sync. Catalogue searches send only your query to the provider you configured.</span></span></div>' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('image') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Permissions</span>' +
+        '<span class="setrow-desc">Internet for the catalogue, vibration for haptics. GameVault never reads your files.</span></span></div>' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('clock') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Reminders</span>' +
+        '<span class="setrow-desc">Not included in this version.</span></span></div></div>';
+    } else {
+      body = '<div class="group-card">' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('sparkle') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">GameVault</span>' +
+        '<span class="setrow-desc">Version ' + esc(APP_VERSION()) + ' · local-first gaming library</span></span></div>' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('cloud') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Catalogue</span>' +
+        '<span class="setrow-desc">RAWG, used only when you add your own key. Attribution belongs to the provider.</span></span></div>' +
+        '<div class="setrow"><span class="setrow-icon">' + icon('star') + '</span>' +
+        '<span class="setrow-body"><span class="setrow-title">Design</span>' +
+        '<span class="setrow-desc">AMOLED black, electric violet and arctic cyan.</span></span></div></div>';
+    }
+
+    const title = (SETTINGS_SECTIONS.find((x) => x[0] === id) || ['', 'Settings'])[1];
+    return '<div class="screen">' + appbar(title, '', '', backBtn()) +
+      '<div class="wrap">' + body + '</div></div>';
+  }
+
+  function toggleRow(title, desc, action, checked) {
+    return '<button class="setrow" data-act="' + action + '" role="switch" aria-checked="' + !!checked + '">' +
+      '<span class="setrow-body"><span class="setrow-title">' + esc(title) + '</span>' +
+      '<span class="setrow-desc">' + esc(desc) + '</span></span>' +
       '<span class="switch" aria-checked="' + !!checked + '"></span></button>';
   }
 
   function APP_VERSION() {
-    try {
-      if (host && host.appVersion) return host.appVersion();
-    } catch (e) { /* ignore */ }
-    return '1.1';
+    try { if (host && host.appVersion) return host.appVersion(); } catch (e) { /* ignore */ }
+    return '1.2';
   }
 
   const SCREENS = {
@@ -1249,56 +1396,59 @@
     collections: screenCollections,
     collection: screenCollection,
     settings: screenSettings,
+    'settings-section': screenSettingsSection,
   };
 
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Render
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   const app = $('#app');
-  const tabbar = $('#tabbar');
+  const nav = $('#tabbar');
   const overlay = $('#overlay');
   const toastEl = $('#toast');
   const fileInput = $('#file-input');
 
   function render() {
-    const view = state.stack[state.stack.length - 1];
+    const view = current();
     document.documentElement.dataset.accent = db.settings.accent;
     if (db.settings.reduceMotion) document.documentElement.dataset.motion = 'reduced';
     else delete document.documentElement.dataset.motion;
 
-    const builder = SCREENS[view.screen] || SCREENS.home;
-    app.innerHTML = builder(view.params || {});
-    renderTabbar();
+    const build = SCREENS[view.screen] || SCREENS.home;
+    app.innerHTML = build(view.params || {});
+    renderNav();
+    hydrateImages(app);
+    if (view.screen === 'library') observeLibrary(visibleGames().length);
   }
 
-  function renderTabbar() {
-    const tabs = [
+  function renderNav() {
+    const items = [
       ['home', 'Home', 'home'],
       ['library', 'Library', 'grid'],
       ['add', 'Add', 'plus'],
       ['activity', 'Activity', 'clock'],
       ['profile', 'Profile', 'user'],
     ];
-    tabbar.innerHTML = tabs.map(([id, label, iconName]) => {
-      const active = state.activeTab === id;
+    nav.innerHTML = items.map(([id, label, iconName]) => {
       if (id === 'add') {
-        return '<button type="button" class="tab add-tab" data-act="tab-add" aria-label="Add games">' +
-          '<span class="plus">' + icon(iconName) + '</span><span>Add</span></button>';
+        return '<button class="nav-add" data-act="tab-add" aria-label="Add games">' +
+          '<span class="fab">' + icon(iconName) + '</span><span>Add</span></button>';
       }
-      return '<button type="button" class="tab" data-act="tab-' + id + '"' + (active ? ' aria-current="page"' : '') + '>' +
+      return '<button class="nav-item" data-act="tab-' + id + '"' +
+        (state.activeTab === id ? ' aria-current="page"' : '') + '>' +
         icon(iconName) + '<span>' + label + '</span></button>';
     }).join('');
   }
 
-  /* ------------------------------------------------------------------ *
-   * Modal + toast
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Overlay, toast
+   * ==================================================================== */
 
-  let modalTimer = null;
-
-  function openModal(html) {
-    overlay.innerHTML = '<div class="sheet" role="dialog" aria-modal="true">' + html + '</div>';
+  function openSheet(html, opts) {
+    const o = opts || {};
+    overlay.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"' +
+      (o.label ? ' aria-label="' + esc(o.label) + '"' : '') + '>' + html + '</div>';
     overlay.hidden = false;
     state.modalOpen = true;
   }
@@ -1310,17 +1460,18 @@
     state.modalOpen = false;
   }
 
+  let toastTimer = null;
   function toast(message, isError) {
     toastEl.textContent = message;
     toastEl.className = 'toast' + (isError ? ' error' : '');
     toastEl.hidden = false;
-    clearTimeout(modalTimer);
-    modalTimer = setTimeout(() => { toastEl.hidden = true; }, 2600);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2600);
   }
 
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Actions
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   function setStatus(game, status) {
     if (game.status === status) return;
@@ -1335,7 +1486,8 @@
     const version = (game.platforms || []).find((p) => p.appId);
     if (!version || !host) { toast('No launchable Android version for this game.', true); return; }
     let result;
-    try { result = JSON.parse(host.launchApp(version.appId)); } catch (e) { result = { ok: false, message: 'Launch failed' }; }
+    try { result = JSON.parse(host.launchApp(version.appId)); }
+    catch (e) { result = { ok: false, message: 'Launch failed' }; }
     if (!result.ok) { toast(result.message || 'Could not launch this game.', true); return; }
     game.launchCount += 1;
     game.lastPlayedAt = Date.now();
@@ -1421,133 +1573,147 @@
     return out;
   }
 
-  function deleteGame(game) {
-    openModal('<div class="sheet-head"><h2>Remove ' + esc(game.title) + '?</h2></div>' +
-      '<p class="desc">This removes the game, its personal data and its collection entries. Export a backup first if you might want it back.</p>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
-      '<button type="button" class="btn danger" data-act="confirm-delete-game" data-id="' + esc(game.id) + '">Remove</button></div>');
+  function confirmDeleteGame(game) {
+    openSheet('<div class="sheet-head"><h2>Remove game?</h2></div>' +
+      '<p class="body muted">“' + esc(game.title) + '” and its personal data will be removed. Collections keep their other games.</p>' +
+      '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn danger" data-act="confirm-delete-game" data-id="' + esc(game.id) + '">Remove</button></div>');
   }
 
-  function openGameEditor(game) {
-    openModal('<form id="form-game-edit">' +
+  function openEditor(game) {
+    openSheet('<form id="form-game-edit">' +
       '<input type="hidden" name="id" value="' + esc(game ? game.id : '') + '">' +
       '<div class="sheet-head"><h2>' + (game ? 'Edit game' : 'Add game') + '</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      gameFormFields(game || { title: '', franchise: '', genres: [], platforms: [], status: 'backlog', rating: 0, notes: '', description: '', developer: '', publisher: '', releaseDate: '' }) +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button>' +
-      '<span class="spacer"></span><button type="submit" class="btn primary">Save</button></div></form>');
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<div class="sheet-body">' + gameFields(game || {
+        title: '', franchise: '', genres: [], platforms: [], status: 'backlog', rating: 0,
+        notes: '', description: '', developer: '', publisher: '', releaseDate: '',
+      }) + '</div>' +
+      '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button>' +
+      '<span class="spacer"></span><button class="btn primary" type="submit">Save</button></div></form>');
   }
 
   function openFilters() {
     const genres = [...new Set(db.games.flatMap((g) => g.genres || []))].sort();
     const f = state.filter;
-    openModal('<div class="sheet-head"><h2>Filters</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      '<label class="field"><span>Platform</span><select data-filter="platform">' +
-      '<option value="all">Any platform</option>' + PLATFORMS.map((p) =>
-        '<option value="' + esc(p) + '"' + (f.platform === p ? ' selected' : '') + '>' + esc(p) + '</option>').join('') + '</select></label>' +
-      '<label class="field"><span>Genre</span><select data-filter="genre"><option value="all">Any genre</option>' +
-      genres.map((g) => '<option value="' + esc(g) + '"' + (f.genre === g ? ' selected' : '') + '>' + esc(g) + '</option>').join('') +
+    const select = (key, options, currentValue) =>
+      '<select data-filter="' + key + '">' + options.map(([v, label]) =>
+        '<option value="' + esc(v) + '"' + (currentValue === v ? ' selected' : '') + '>' + esc(label) + '</option>').join('') + '</select>';
+
+    openSheet('<div class="sheet-head"><h2>Filter &amp; sort</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<label class="field"><span class="label">Sort by</span><select id="sort-select" data-setting="sort">' +
+      SORTS.map(([v, label]) => '<option value="' + v + '"' + (state.sort === v ? ' selected' : '') + '>' + label + '</option>').join('') +
       '</select></label>' +
-      '<label class="field"><span>Installed status</span><select data-filter="installed">' +
-      [['all', 'Any'], ['yes', 'Installed on this device'], ['no', 'Not installed']].map(([id, label]) =>
-        '<option value="' + id + '"' + (f.installed === id ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label>' +
-      '<label class="field"><span>Completion</span><select data-filter="completion">' +
-      [['all', 'Any'], ['completed', 'Completed only'], ['incomplete', 'Not completed']].map(([id, label]) =>
-        '<option value="' + id + '"' + (f.completion === id ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label>' +
-      '<button type="button" class="item" data-act="toggle-fav-filter" role="switch" aria-checked="' + f.favorites + '">' +
-      '<span class="grow">Favorites only</span><span class="switch" aria-checked="' + f.favorites + '"></span></button>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="clear-filters">Clear all</button>' +
-      '<span class="spacer"></span><button type="button" class="btn primary" data-act="close-modal">Show ' +
+      '<label class="field"><span class="label">Platform</span>' +
+      select('platform', [['all', 'Any platform']].concat(PLATFORMS.map((p) => [p, p])), f.platform) + '</label>' +
+      '<label class="field"><span class="label">Genre</span>' +
+      select('genre', [['all', 'Any genre']].concat(genres.map((g) => [g, g])), f.genre) + '</label>' +
+      '<label class="field"><span class="label">Installed</span>' +
+      select('installed', [['all', 'Any'], ['yes', 'Installed on this device'], ['no', 'Not installed']], f.installed) + '</label>' +
+      '<label class="field"><span class="label">Completion</span>' +
+      select('completion', [['all', 'Any'], ['completed', 'Completed only'], ['incomplete', 'Not completed']], f.completion) + '</label>' +
+      '<button class="setrow" data-act="toggle-fav-filter" role="switch" aria-checked="' + f.favorites + '" style="border:0;padding-left:0">' +
+      '<span class="setrow-body"><span class="setrow-title">Favorites only</span></span>' +
+      '<span class="switch" aria-checked="' + f.favorites + '"></span></button>' +
+      '</div><div class="sheet-foot"><button class="btn ghost" data-act="clear-filters">Reset</button>' +
+      '<span class="spacer"></span><button class="btn primary" data-act="close-modal">Show ' +
       visibleGames().length + ' games</button></div>');
   }
 
   function openCollectionPicker(game) {
-    openModal('<div class="sheet-head"><h2>Add to collection</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      (db.collections.length ? '<div class="picker-list">' + db.collections.map((c) => {
+    openSheet('<div class="sheet-head"><h2>Add to collection</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      (db.collections.length ? '<div class="picker">' + db.collections.map((c) => {
         const inside = c.gameIds.includes(game.id);
-        return '<button type="button" class="discover-row" data-act="collection-toggle-game" data-collection="' + esc(c.id) +
+        return '<button class="discover" data-act="collection-toggle-game" data-collection="' + esc(c.id) +
           '" data-game="' + esc(game.id) + '" aria-pressed="' + inside + '">' +
-          '<div class="info" style="flex:1"><div class="title">' + esc(c.name) + '</div>' +
-          '<div class="meta">' + c.gameIds.length + ' games</div></div>' +
-          '<span class="check">' + icon('check') + '</span></button>';
-      }).join('') + '</div>' : '<p class="desc">You have no collections yet.</p>') +
-      '<div class="form-actions"><button type="button" class="btn" data-act="new-collection">New collection</button></div>');
+          '<span class="discover-main"><span class="discover-title">' + esc(c.name) + '</span>' +
+          '<span class="discover-sub">' + c.gameIds.length + ' games</span></span>' +
+          '<span class="tick">' + icon('check') + '</span></button>';
+      }).join('') + '</div>' : '<p class="caption">You have no collections yet.</p>') +
+      '<div class="sheet-foot"><button class="btn" data-act="new-collection">New collection</button></div>');
   }
 
   function openCollectionAdd(collection) {
     const candidates = db.games.filter((g) => !collection.gameIds.includes(g.id));
-    openModal('<div class="sheet-head"><h2>Add games</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      (candidates.length ? '<div class="picker-list">' + candidates.map((g) =>
-        '<button type="button" class="discover-row" data-act="collection-toggle-game" data-collection="' + esc(collection.id) +
-        '" data-game="' + esc(g.id) + '">' + coverHtml(g) +
-        '<div class="info" style="flex:1"><div class="title">' + esc(g.title) + '</div>' +
-        '<div class="meta">' + esc(platformNames(g)) + '</div></div><span class="check">' + icon('check') + '</span></button>').join('') +
-        '</div>' : '<p class="desc">Every game is already in this collection.</p>'));
-  }
-
-  function openNewCollection() {
-    openModal('<form id="form-new-collection">' +
-      '<div class="sheet-head"><h2>New collection</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      '<label class="field"><span>Name</span><input name="name" required maxlength="60" placeholder="e.g. Resident Evil"></label>' +
-      '<p class="desc">Collections group games across platforms. A game can live in several collections.</p>' +
-      '<button class="btn primary block" type="submit">Create collection</button></form>');
-  }
-
-  function openRenameCollection(collection) {
-    openModal('<form id="form-rename-collection">' +
-      '<input type="hidden" name="id" value="' + esc(collection.id) + '">' +
-      '<div class="sheet-head"><h2>Rename collection</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      '<label class="field"><span>Name</span><input name="name" required maxlength="60" value="' + esc(collection.name) + '"></label>' +
-      '<button class="btn primary block" type="submit">Save name</button></form>');
+    openSheet('<div class="sheet-head"><h2>Add games</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      (candidates.length ? '<div class="picker">' + candidates.map((g) =>
+        '<button class="discover" data-act="collection-toggle-game" data-collection="' + esc(collection.id) +
+        '" data-game="' + esc(g.id) + '">' +
+        '<span class="discover-main"><span class="discover-title">' + esc(g.title) + '</span>' +
+        '<span class="discover-sub">' + esc(platformNames(g) || 'No platform') + '</span></span>' +
+        '<span class="tick">' + icon('check') + '</span></button>').join('') + '</div>'
+        : '<p class="caption">Every game is already in this collection.</p>'));
   }
 
   function openPlatformPicker(game) {
-    openModal('<div class="sheet-head"><h2>Add platform version</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      '<div class="chips" style="flex-wrap:wrap;margin-bottom:12px">' + PLATFORMS.map((p) =>
-        '<button type="button" class="chip small" data-act="platform-add" data-id="' + esc(game.id) +
-        '" data-platform="' + esc(p) + '">' + esc(p) + '</button>').join('') + '</div>' +
-      '<form id="form-custom-platform"><input type="hidden" name="id" value="' + esc(game.id) + '">' +
-      '<label class="field"><span>Custom platform</span><input name="name" placeholder="e.g. Retro handheld" maxlength="40"></label>' +
-      '<button class="btn block" type="submit">Add custom platform</button></form>');
+    openSheet('<div class="sheet-head"><h2>Add platform version</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<div class="chips wrap">' + PLATFORMS.map((p) =>
+        '<button class="chip" data-act="platform-add" data-id="' + esc(game.id) + '" data-platform="' + esc(p) + '">' +
+        esc(p) + '</button>').join('') + '</div>' +
+      '<form id="form-custom-platform" style="margin-top:16px">' +
+      '<input type="hidden" name="id" value="' + esc(game.id) + '">' +
+      '<label class="field"><span class="label">Custom platform</span>' +
+      '<input name="name" placeholder="e.g. Retro handheld" maxlength="40"></label>' +
+      '<button class="btn block" type="submit" style="margin-top:12px">Add custom platform</button></form>');
   }
 
   function openProfileEditor() {
     const p = db.profile;
-    openModal('<form id="form-profile"><div class="sheet-head"><h2>Edit profile</h2>' +
-      '<button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      '<label class="field"><span>Username</span><input name="username" maxlength="40" value="' + esc(p.username) + '"></label>' +
-      '<label class="field"><span>Short biography</span><textarea name="bio" maxlength="240" rows="3">' + esc(p.bio) + '</textarea></label>' +
-      '<div class="field"><span>Favorite platforms</span><div class="chips" style="flex-wrap:wrap">' +
-      PLATFORMS.map((platform) => '<button type="button" class="chip small" data-act="profile-platform" data-platform="' +
-        esc(platform) + '" aria-pressed="' + ((p.favoritePlatforms || []).includes(platform)) + '">' + esc(platform) + '</button>').join('') +
-      '</div></div>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="change-avatar">Change image</button>' +
-      '<span class="spacer"></span><button type="submit" class="btn primary">Save</button></div></form>');
+    openSheet('<form id="form-profile"><div class="sheet-head"><h2>Edit profile</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<label class="field"><span class="label">Username</span>' +
+      '<input name="username" maxlength="40" value="' + esc(p.username) + '"></label>' +
+      '<label class="field"><span class="label">Short biography</span>' +
+      '<textarea name="bio" maxlength="240" rows="3">' + esc(p.bio) + '</textarea></label>' +
+      '<div class="field"><span class="label">Favorite platforms</span><div class="chips wrap">' +
+      PLATFORMS.map((platform) => '<button type="button" class="chip" data-act="profile-platform" data-platform="' +
+        esc(platform) + '" aria-pressed="' + ((p.favoritePlatforms || []).includes(platform)) + '">' +
+        esc(platform) + '</button>').join('') + '</div></div>' +
+      '</div><div class="sheet-foot"><button type="button" class="btn" data-act="change-avatar">Change image</button>' +
+      '<span class="spacer"></span><button class="btn primary" type="submit">Save</button></div></form>');
   }
 
   function openCatalogueKey() {
-    openModal('<form id="form-catalogue-key" class="panel">' +
-      '<div class="sheet-head"><h2>Catalogue key</h2><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">×</button></div>' +
-      '<label class="field"><span>RAWG API key</span><input name="key" autocomplete="off" value="' + esc(db.settings.catalogueKey) + '"></label>' +
-      '<p class="desc">Stored only on this device and sent only to api.rawg.io. Leave empty to disable online search.</p>' +
-      '<button class="btn primary block" type="submit">Save key</button></form>');
+    openSheet('<form id="form-catalogue-key">' +
+      '<div class="sheet-head"><h2>Catalogue key</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<div class="sheet-body"><label class="field"><span class="label">RAWG API key</span>' +
+      '<input name="key" autocomplete="off" value="' + esc(db.settings.catalogueKey) + '"></label>' +
+      '<p class="sheet-note">Stored only on this device and sent only to api.rawg.io. Leave empty to disable online search.</p>' +
+      '</div><button class="btn primary block" type="submit">Save key</button></form>');
   }
 
-  function openAvatarPicker() {
-    state.pendingArt = { kind: 'avatar' };
-    fileInput.value = '';
-    fileInput.click();
+  function openNewCollection() {
+    openSheet('<form id="form-new-collection">' +
+      '<div class="sheet-head"><h2>New collection</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<label class="field"><span class="label">Name</span>' +
+      '<input name="name" required maxlength="60" placeholder="e.g. Resident Evil"></label>' +
+      '<p class="sheet-note">A game can belong to several collections.</p>' +
+      '<button class="btn primary block" type="submit" style="margin-top:14px">Create collection</button></form>');
   }
 
-  /* ------------------------------------------------------------------ *
-   * Event delegation
-   * ------------------------------------------------------------------ */
+  function openRenameCollection(collection) {
+    openSheet('<form id="form-rename-collection">' +
+      '<input type="hidden" name="id" value="' + esc(collection.id) + '">' +
+      '<div class="sheet-head"><h2>Rename collection</h2>' +
+      '<button class="iconbtn plain" data-act="close-modal" aria-label="Close">' + icon('close') + '</button></div>' +
+      '<label class="field"><span class="label">Name</span>' +
+      '<input name="name" required maxlength="60" value="' + esc(collection.name) + '"></label>' +
+      '<button class="btn primary block" type="submit" style="margin-top:14px">Save name</button></form>');
+  }
+
+  const pickAvatar = () => { state.pendingArt = { kind: 'avatar' }; fileInput.value = ''; fileInput.click(); };
+
+  /* ==================================================================== *
+   * Event handling
+   * ==================================================================== */
 
   function onClick(e) {
     const target = e.target.closest('[data-act]');
@@ -1566,29 +1732,26 @@
       case 'tab-activity': tabTo('activity'); break;
       case 'tab-profile': tabTo('profile'); break;
       case 'open-settings': go('settings'); break;
+      case 'settings-section': go('settings-section', { id: target.dataset.section }); break;
       case 'open-collections': go('collections'); break;
       case 'open-collection': go('collection', { id }); break;
       case 'open-game': go('game', { id }); break;
       case 'close-modal': closeModal(); break;
-      case 'edit-game': openGameEditor(gameById(id)); break;
-      case 'set-status': {
-        const game = gameById(id);
-        if (game) setStatus(game, target.dataset.status);
-        break;
-      }
+      case 'edit-game': { const g = gameById(id); if (g) openEditor(g); break; }
+      case 'set-status': { const g = gameById(id); if (g) setStatus(g, target.dataset.status); break; }
       case 'rate': {
-        const game = gameById(id);
-        if (game) { game.rating = Number(target.dataset.value); persist(); haptic(8); render(); }
+        const g = gameById(id);
+        if (g) { g.rating = Number(target.dataset.value); persist(); haptic(8); render(); }
         break;
       }
       case 'toggle-fav': {
-        const game = gameById(id);
-        if (game) { game.favorite = !game.favorite; persist(); haptic(10); render(); }
+        const g = gameById(id);
+        if (g) { g.favorite = !g.favorite; persist(); haptic(10); render(); }
         break;
       }
       case 'toggle-wish': {
-        const game = gameById(id);
-        if (game) { game.wishlist = !game.wishlist; persist(); haptic(10); render(); }
+        const g = gameById(id);
+        if (g) { g.wishlist = !g.wishlist; persist(); haptic(10); render(); }
         break;
       }
       case 'toggle-profile-fav': {
@@ -1596,47 +1759,33 @@
         const index = list.indexOf(id);
         if (index >= 0) list.splice(index, 1);
         else { list.unshift(id); if (list.length > 8) list.length = 8; }
-        persist();
-        haptic(10);
+        persist(); haptic(10);
         toast(index >= 0 ? 'Removed from profile favorites' : 'Added to profile favorites');
         render();
         break;
       }
-      case 'launch': {
-        const game = gameById(id);
-        if (game) launchGame(game);
-        break;
-      }
-      case 'delete-game': {
-        const game = gameById(id);
-        if (game) deleteGame(game);
-        break;
-      }
+      case 'launch': { const g = gameById(id); if (g) launchGame(g); break; }
+      case 'delete-game': { const g = gameById(id); if (g) confirmDeleteGame(g); break; }
       case 'confirm-delete-game': {
-        const game = gameById(id);
-        if (game) {
-          db.games = db.games.filter((g) => g.id !== game.id);
-          db.collections.forEach((c) => { c.gameIds = c.gameIds.filter((gid) => gid !== game.id); });
-          db.profile.favoriteGameIds = (db.profile.favoriteGameIds || []).filter((gid) => gid !== game.id);
-          logEvent('removed', game.title, null);
-          persist();
-          closeModal();
-          tabTo('library');
-          toast('Removed ' + game.title);
-        }
+        const g = gameById(id);
+        if (!g) break;
+        db.games = db.games.filter((x) => x.id !== g.id);
+        db.collections.forEach((c) => { c.gameIds = c.gameIds.filter((x) => x !== g.id); });
+        db.profile.favoriteGameIds = (db.profile.favoriteGameIds || []).filter((x) => x !== g.id);
+        logEvent('removed', g.title);
+        persist();
+        closeModal();
+        tabTo('library');
+        toast('Removed ' + g.title);
         break;
       }
-      case 'add-platform': {
-        const game = gameById(id);
-        if (game) openPlatformPicker(game);
-        break;
-      }
+      case 'add-platform': { const g = gameById(id); if (g) openPlatformPicker(g); break; }
       case 'platform-add': {
-        const game = gameById(target.dataset.id);
-        if (game) {
+        const g = gameById(target.dataset.id);
+        if (g) {
           const name = target.dataset.platform;
-          if (!(game.platforms || []).some((p) => p.name === name)) {
-            game.platforms = (game.platforms || []).concat({ name, appId: null });
+          if (!(g.platforms || []).some((p) => p.name === name)) {
+            g.platforms = (g.platforms || []).concat({ name, appId: null });
             persist();
           }
           closeModal();
@@ -1645,19 +1794,11 @@
         break;
       }
       case 'remove-platform': {
-        const game = gameById(id);
-        if (game) {
-          game.platforms.splice(Number(target.dataset.index), 1);
-          persist();
-          render();
-        }
+        const g = gameById(id);
+        if (g) { g.platforms.splice(Number(target.dataset.index), 1); persist(); render(); }
         break;
       }
-      case 'add-to-collection': {
-        const game = gameById(id);
-        if (game) openCollectionPicker(game);
-        break;
-      }
+      case 'add-to-collection': { const g = gameById(id); if (g) openCollectionPicker(g); break; }
       case 'collection-toggle-game': {
         const collection = collectionById(target.dataset.collection);
         const gameId = target.dataset.game;
@@ -1668,56 +1809,39 @@
           persist();
           haptic(8);
           target.setAttribute('aria-pressed', String(index < 0));
-          if (state.modalOpen) {
-            const inModal = target.getAttribute('aria-pressed') === 'true';
-            target.querySelector('.check') && (target.querySelector('.check').textContent = inModal ? '✓' : '');
-          }
           render();
         }
         break;
       }
       case 'new-collection': openNewCollection(); break;
-      case 'rename-collection': {
-        const collection = collectionById(id);
-        if (collection) openRenameCollection(collection);
-        break;
-      }
+      case 'rename-collection': { const c = collectionById(id); if (c) openRenameCollection(c); break; }
       case 'fav-collection': {
-        const collection = collectionById(id);
-        if (collection) { collection.favorite = !collection.favorite; persist(); haptic(10); render(); }
+        const c = collectionById(id);
+        if (c) { c.favorite = !c.favorite; persist(); haptic(10); render(); }
         break;
       }
       case 'delete-collection': {
-        const collection = collectionById(id);
-        if (!collection) break;
-        openModal('<div class="sheet-head"><h2>Delete "' + esc(collection.name) + '"?</h2></div>' +
-          '<p class="desc">The collection is removed. Its games stay in your library.</p>' +
-          '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button>' +
-          '<span class="spacer"></span><button type="button" class="btn danger" data-act="confirm-delete-collection" data-id="' +
-          esc(collection.id) + '">Delete</button></div>');
+        const c = collectionById(id);
+        if (!c) break;
+        openSheet('<div class="sheet-head"><h2>Delete “' + esc(c.name) + '”?</h2></div>' +
+          '<p class="body muted">The shelf is removed. Its games stay in your library.</p>' +
+          '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button>' +
+          '<span class="spacer"></span><button class="btn danger" data-act="confirm-delete-collection" data-id="' +
+          esc(c.id) + '">Delete</button></div>');
         break;
       }
       case 'confirm-delete-collection': {
-        const collection = collectionById(id);
-        if (!collection) break;
         db.collections = db.collections.filter((c) => c.id !== id);
         persist();
         closeModal();
         tabTo('collections');
         break;
       }
-      case 'confirm-clear-art': { clearArtworkNow(); break; }
-      case 'confirm-clear-activity': { clearActivityNow(); break; }
-      case 'confirm-restore': { restorePending(); break; }
-      case 'collection-add': {
-        const collection = collectionById(id);
-        if (collection) openCollectionAdd(collection);
-        break;
-      }
+      case 'collection-add': { const c = collectionById(id); if (c) openCollectionAdd(c); break; }
       case 'collection-remove': {
-        const collection = collectionById(id);
-        if (collection) {
-          collection.gameIds = collection.gameIds.filter((gid) => gid !== target.dataset.game);
+        const c = collectionById(id);
+        if (c) {
+          c.gameIds = c.gameIds.filter((g) => g !== target.dataset.game);
           persist();
           render();
         }
@@ -1725,22 +1849,21 @@
       }
       case 'reorder-toggle': state.reorder = !state.reorder; render(); break;
       case 'move-game': {
-        const collection = collectionById(id);
-        if (!collection) break;
+        const c = collectionById(id);
+        if (!c) break;
         const index = Number(target.dataset.index);
-        const dir = Number(target.dataset.dir);
-        const next = index + dir;
-        if (next < 0 || next >= collection.gameIds.length) break;
-        const [moved] = collection.gameIds.splice(index, 1);
-        collection.gameIds.splice(next, 0, moved);
+        const next = index + Number(target.dataset.dir);
+        if (next < 0 || next >= c.gameIds.length) break;
+        const [moved] = c.gameIds.splice(index, 1);
+        c.gameIds.splice(next, 0, moved);
         persist();
         render();
         break;
       }
       case 'change-art': {
         const kind = target.dataset.target;
-        if (kind === 'avatar') { openAvatarPicker(); break; }
-        state.pendingArt = { kind: kind === 'background' ? 'background' : 'cover', id: target.dataset.id || null, collection: null };
+        if (kind === 'avatar') { pickAvatar(); break; }
+        state.pendingArt = { kind: kind === 'background' ? 'background' : 'cover', id: target.dataset.id || null };
         fileInput.value = '';
         fileInput.click();
         break;
@@ -1751,7 +1874,7 @@
         fileInput.click();
         break;
       }
-      case 'change-avatar': openAvatarPicker(); break;
+      case 'change-avatar': pickAvatar(); break;
       case 'edit-profile': openProfileEditor(); break;
       case 'profile-platform': {
         const platform = target.dataset.platform;
@@ -1761,7 +1884,6 @@
         else list.push(platform);
         persist();
         target.setAttribute('aria-pressed', String(index < 0));
-        target.classList.toggle('active');
         break;
       }
       case 'add-tab': state.addTab = target.dataset.tab; render(); break;
@@ -1786,18 +1908,28 @@
         target.setAttribute('aria-pressed', String(index < 0));
         break;
       }
-      case 'set-view': state.view = target.dataset.view; db.settings.view = state.view; persist(); render(); break;
-      case 'filter-status': state.filter.status = target.dataset.status; render(); break;
+      case 'set-view':
+        state.view = target.dataset.view;
+        db.settings.view = state.view;
+        persist();
+        render();
+        break;
+      case 'filter-status':
+        state.filter.status = target.dataset.status;
+        state.limit = PAGE;
+        render();
+        break;
       case 'clear-filters':
         state.filter = { platform: 'all', genre: 'all', status: 'all', favorites: false, installed: 'all', completion: 'all' };
         state.query = '';
+        state.limit = PAGE;
         render();
         break;
       case 'open-filters': openFilters(); break;
       case 'toggle-fav-filter':
         state.filter.favorites = !state.filter.favorites;
         persist();
-        closeModal(true);
+        closeModal();
         render();
         openFilters();
         break;
@@ -1813,18 +1945,139 @@
       case 'toggle-track': db.settings.trackActivity = !db.settings.trackActivity; persist(); render(); break;
       case 'edit-catalogue-key': openCatalogueKey(); break;
       case 'clear-art': clearArtwork(); break;
+      case 'confirm-clear-art': clearArtworkNow(); break;
       case 'clear-activity': clearActivity(); break;
+      case 'confirm-clear-activity': clearActivityNow(); break;
       case 'export-backup': exportBackup(); break;
       case 'import-backup': importBackup(); break;
       case 'delete-data': confirmDeleteAll(); break;
       case 'confirm-delete-all': deleteAllData(); break;
+      case 'confirm-restore': restorePending(); break;
       default: break;
     }
   }
 
-  /* ------------------------------------------------------------------ *
-   * Device discovery
-   * ------------------------------------------------------------------ */
+  document.addEventListener('click', onClick);
+
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (!form || !form.id) return;
+
+    if (form.id === 'form-game' || form.id === 'form-game-edit') {
+      e.preventDefault();
+      saveGameForm(form);
+    } else if (form.id === 'form-catalogue') {
+      e.preventDefault();
+      runCatalogueSearch(form.elements.q.value);
+    } else if (form.id === 'form-catalogue-key') {
+      e.preventDefault();
+      saveCatalogueKey(form);
+    } else if (form.id === 'form-profile') {
+      e.preventDefault();
+      const data = new FormData(form);
+      db.profile.username = String(data.get('username') || '').trim().slice(0, 40) || 'Player One';
+      db.profile.bio = String(data.get('bio') || '').trim().slice(0, 240);
+      persist();
+      closeModal();
+      render();
+      toast('Profile saved');
+    } else if (form.id === 'form-new-collection') {
+      e.preventDefault();
+      const name = String(new FormData(form).get('name') || '').trim();
+      if (!name) return;
+      const collection = normalizeCollection({ name, gameIds: [] });
+      db.collections.push(collection);
+      persist();
+      closeModal();
+      go('collection', { id: collection.id });
+      toast('Collection created');
+    } else if (form.id === 'form-rename-collection') {
+      e.preventDefault();
+      const data = new FormData(form);
+      const collection = collectionById(String(data.get('id') || ''));
+      const name = String(data.get('name') || '').trim();
+      if (collection && name) {
+        collection.name = name;
+        persist();
+        closeModal();
+        render();
+      }
+    } else if (form.id === 'form-custom-platform') {
+      e.preventDefault();
+      const data = new FormData(form);
+      const game = gameById(String(data.get('id') || ''));
+      const name = String(data.get('name') || '').trim();
+      if (game && name) {
+        if (!(game.platforms || []).some((p) => p.name === name)) {
+          game.platforms = (game.platforms || []).concat({ name, appId: null });
+          persist();
+        }
+        closeModal();
+        render();
+      }
+    }
+  });
+
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'lib-search') {
+      state.query = e.target.value;
+      refreshLibrary(true);
+    } else if (e.target.id === 'disc-search') {
+      state.discoveryQuery = e.target.value;
+      const scroll = window.scrollY;
+      render();
+      window.scrollTo(0, scroll);
+      const field = $('#disc-search');
+      if (field) { field.focus(); field.setSelectionRange(field.value.length, field.value.length); }
+    }
+  });
+
+  document.addEventListener('change', (e) => {
+    const target = e.target;
+    if (target.dataset && target.dataset.filter) {
+      state.filter[target.dataset.filter] = target.value;
+      state.limit = PAGE;
+      render();
+      openFilters();
+    } else if (target.dataset && target.dataset.setting) {
+      db.settings[target.dataset.setting] = target.value;
+      if (target.dataset.setting === 'view') state.view = target.value;
+      if (target.dataset.setting === 'sort') {
+        state.sort = target.value;
+        state.limit = PAGE;
+      }
+      persist();
+      render();
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (file) handleFile(file);
+  });
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (state.modalOpen) closeModal();
+      else back();
+    }
+  });
+
+  window.addEventListener('scroll', () => {
+    const bar = $('.appbar');
+    if (bar) bar.classList.toggle('scrolled', window.scrollY > 4);
+  }, { passive: true });
+
+  /* hydrate images that arrive after the initial render */
+  document.addEventListener('load', (e) => {
+    if (e.target && e.target.tagName === 'IMG') e.target.classList.add('loaded');
+  }, true);
+
+  /* ==================================================================== *
+   * Discovery
+   * ==================================================================== */
 
   function scanDevice() {
     if (!host) { toast('Device discovery is only available in the app.', true); return; }
@@ -1833,8 +2086,7 @@
     render();
     setTimeout(() => {
       try {
-        const raw = host.getInstalledApps();
-        const list = JSON.parse(raw || '[]');
+        const list = JSON.parse(host.getInstalledApps() || '[]');
         state.discovery = list.map((app) => ({
           packageName: String(app.packageName || app.package || ''),
           label: String(app.label || app.packageName || 'Unknown app'),
@@ -1863,7 +2115,6 @@
         id: uid(),
         title: app.label,
         platforms: [{ name: 'Android', appId: app.packageName }],
-        status: 'backlog',
         addedAt: Date.now(),
         coverKey,
         source: 'discovery',
@@ -1876,22 +2127,22 @@
     persist();
     haptic(14);
     if (added) {
-      toast('Added ' + added + ' game' + (added === 1 ? '' : 's'));
+      toast('Added ' + added + (added === 1 ? ' game' : ' games'));
       tabTo('library');
     } else {
       render();
     }
   }
 
-  /* ------------------------------------------------------------------ *
-   * Catalogue (RAWG adapter)
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Catalogue
+   * ==================================================================== */
 
-  async function saveCatalogueKey(form) {
+  function saveCatalogueKey(form) {
     const key = String(new FormData(form).get('key') || '').trim();
     db.settings.catalogueKey = key;
     persist();
-    closeModal(true);
+    closeModal();
     render();
     toast(key ? 'Catalogue key saved' : 'Catalogue disabled');
   }
@@ -1923,7 +2174,7 @@
         platforms: (item.platforms || []).map((p) => mapPlatform(p.platform && p.platform.name)).filter(Boolean),
       }));
     } catch (err) {
-      state.catalogueError = err && err.message ? err.message : 'Network request failed.';
+      state.catalogueError = (err && err.message) || 'Network request failed.';
     }
     state.catalogueBusy = false;
     render();
@@ -1952,17 +2203,14 @@
       releaseDate: (detail && detail.released) || item.released || '',
       genres: detail && detail.genres ? detail.genres.map((g) => g.name) : [],
       platforms,
-      status: 'backlog',
       addedAt: Date.now(),
       coverUrl: item.image || null,
       source: 'catalogue',
-      rating: 0,
     });
 
     const duplicate = db.games.find((g) => g.title.toLowerCase() === meta.title.toLowerCase());
     if (duplicate) {
       duplicate.platforms = mergePlatforms(duplicate.platforms, platforms.map((p) => p.name), true);
-      if (!duplicate.description && meta.description) duplicate.description = meta.description;
       persist();
       toast('Merged into existing ' + duplicate.title);
       go('game', { id: duplicate.id });
@@ -1978,7 +2226,7 @@
           meta.coverKey = await Art.put(dataUrl);
           meta.backgroundKey = meta.coverKey;
         }
-      } catch (e) { /* keep remote URL fallback */ }
+      } catch (e) { /* keep remote URL */ }
     }
 
     db.games.push(meta);
@@ -1996,9 +2244,9 @@
       .replace(/\s+/g, ' ').trim().slice(0, 2000);
   }
 
-  /* ------------------------------------------------------------------ *
-   * Artwork handling
-   * ------------------------------------------------------------------ */
+  /* ==================================================================== *
+   * Artwork
+   * ==================================================================== */
 
   function shrinkImage(blob, maxSize) {
     return new Promise((resolve) => {
@@ -2010,8 +2258,7 @@
           const canvas = document.createElement('canvas');
           canvas.width = Math.max(1, Math.round(img.width * scale));
           canvas.height = Math.max(1, Math.round(img.height * scale));
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
           resolve(canvas.toDataURL('image/jpeg', 0.82));
         };
         img.onerror = () => resolve(null);
@@ -2029,11 +2276,8 @@
     if (!dataUrl) { toast('Could not read that image.', true); return; }
 
     if (pending.kind === 'avatar') {
-      const key = await Art.put(dataUrl);
-      db.profile.avatarKey = key;
-      persist();
-      render();
-      toast('Profile image updated');
+      db.profile.avatarKey = await Art.put(dataUrl);
+      persist(); render(); toast('Profile image updated');
       return;
     }
 
@@ -2041,9 +2285,7 @@
       const collection = collectionById(pending.id);
       if (collection) {
         collection.artworkKey = await Art.put(dataUrl);
-        persist();
-        render();
-        toast('Collection artwork updated');
+        persist(); render(); toast('Collection artwork updated');
       }
       return;
     }
@@ -2055,9 +2297,7 @@
       else { game.coverKey = key; game.backgroundKey = game.backgroundKey || key; }
       game.customArt = true;
       logEvent('artwork', game.title, game.id);
-      persist();
-      render();
-      toast('Artwork updated');
+      persist(); render(); toast('Artwork updated');
       return;
     }
 
@@ -2066,10 +2306,10 @@
   }
 
   function clearArtwork() {
-    openModal('<div class="sheet-head"><h2>Clear cached artwork?</h2></div>' +
-      '<p class="desc">Every stored image is deleted, including covers you added. Games, notes and collections stay.</p>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button>' +
-      '<span class="spacer"></span><button type="button" class="btn danger" data-act="confirm-clear-art">Clear artwork</button></div>');
+    openSheet('<div class="sheet-head"><h2>Clear cached artwork?</h2></div>' +
+      '<p class="body muted">Every stored image is deleted, including covers you added. Games, notes and collections stay.</p>' +
+      '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button>' +
+      '<span class="spacer"></span><button class="btn danger" data-act="confirm-clear-art">Clear artwork</button></div>');
   }
 
   async function clearArtworkNow() {
@@ -2079,13 +2319,14 @@
     db.collections.forEach((c) => { c.artworkKey = null; });
     db.profile.avatarKey = null;
     persist();
+    closeModal();
     render();
     toast('Artwork cache cleared');
   }
 
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Backup
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   async function buildBackup() {
     const art = {};
@@ -2153,14 +2394,11 @@
 
   window.__gvImportBackup = (json) => applyBackup(json);
 
-  async function applyBackup(json) {
+  function applyBackup(json) {
     let parsed;
-    try {
-      parsed = JSON.parse(json);
-    } catch (e) {
-      toast('That file is not valid JSON.', true);
-      return;
-    }
+    try { parsed = JSON.parse(json); }
+    catch (e) { toast('That file is not valid JSON.', true); return; }
+
     const payload = parsed && parsed.data ? parsed.data : parsed;
     if (!payload || !Array.isArray(payload.games)) {
       toast('That file is not a GameVault backup.', true);
@@ -2168,15 +2406,14 @@
     }
 
     state.pendingRestore = parsed;
-
-    openModal('<div class="sheet-head"><h2>Restore this backup?</h2></div>' +
-      '<p class="desc">The file contains <b>' + payload.games.length + '</b> games. Restoring replaces your current library of ' +
-      db.games.length + ' games, its collections and profile. Export a backup first if you might want the current data back.</p>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button>' +
-      '<span class="spacer"></span><button type="button" class="btn danger" data-act="confirm-restore">Replace library</button></div>');
+    openSheet('<div class="sheet-head"><h2>Restore this backup?</h2></div>' +
+      '<p class="body muted">The file contains <b>' + payload.games.length + '</b> games. Restoring replaces your library of ' +
+      db.games.length + ' games, its collections and profile. Export first if you might want the current data back.</p>' +
+      '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button>' +
+      '<span class="spacer"></span><button class="btn danger" data-act="confirm-restore">Replace library</button></div>');
   }
 
-  async function restorePending() {
+  function restorePending() {
     const parsed = state.pendingRestore;
     if (!parsed) return;
     const payload = parsed.data || parsed;
@@ -2189,10 +2426,9 @@
       settings: { ...db.settings, ...(payload.settings || {}) },
     };
 
-    const artwork = parsed.artwork || {};
-    for (const [key, value] of Object.entries(artwork)) {
+    Object.entries(parsed.artwork || {}).forEach(([key, value]) => {
       if (typeof value === 'string' && value.startsWith('data:')) ART[key] = value;
-    }
+    });
 
     state.pendingRestore = null;
     db = restored;
@@ -2203,10 +2439,10 @@
   }
 
   function clearActivity() {
-    openModal('<div class="sheet-head"><h2>Clear the timeline?</h2></div>' +
-      '<p class="desc">Recorded events are removed. Launch counts and other statistics stored on games are kept.</p>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button>' +
-      '<span class="spacer"></span><button type="button" class="btn danger" data-act="confirm-clear-activity">Clear timeline</button></div>');
+    openSheet('<div class="sheet-head"><h2>Clear the timeline?</h2></div>' +
+      '<p class="body muted">Recorded events are removed. Launch counts stored on games are kept.</p>' +
+      '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button>' +
+      '<span class="spacer"></span><button class="btn danger" data-act="confirm-clear-activity">Clear timeline</button></div>');
   }
 
   function clearActivityNow() {
@@ -2218,10 +2454,10 @@
   }
 
   function confirmDeleteAll() {
-    openModal('<div class="sheet-head"><h2>Delete all data?</h2></div>' +
-      '<p class="desc">Every game, collection, note and artwork will be removed from this device. This cannot be undone.</p>' +
-      '<div class="form-actions"><button type="button" class="btn ghost" data-act="close-modal">Cancel</button>' +
-      '<span class="spacer"></span><button type="button" class="btn danger" data-act="confirm-delete-all">Delete everything</button></div>');
+    openSheet('<div class="sheet-head"><h2>Delete all data?</h2></div>' +
+      '<p class="body muted">Every game, collection, note and artwork will be removed from this device. This cannot be undone.</p>' +
+      '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button>' +
+      '<span class="spacer"></span><button class="btn danger" data-act="confirm-delete-all">Delete everything</button></div>');
   }
 
   async function deleteAllData() {
@@ -2229,148 +2465,24 @@
     persist();
     await Art.clear();
     Object.keys(ART).forEach((k) => delete ART[k]);
-    closeModal(true);
+    closeModal();
     tabTo('home');
     toast('All local data deleted');
   }
 
-  /* ------------------------------------------------------------------ *
-   * Form + input handling
-   * ------------------------------------------------------------------ */
-
-  document.addEventListener('submit', (e) => {
-    const form = e.target;
-    if (!form || !form.id) return;
-    if (form.id === 'form-game' || form.id === 'form-game-edit') {
-      e.preventDefault();
-      saveGameForm(form);
-    } else if (form.id === 'form-new-collection') {
-      e.preventDefault();
-      const name = String(new FormData(form).get('name') || '').trim();
-      if (!name) return;
-      const collection = normalizeCollection({ name, gameIds: [] });
-      db.collections.push(collection);
-      persist();
-      closeModal();
-      go('collection', { id: collection.id });
-      toast('Collection created');
-    } else if (form.id === 'form-rename-collection') {
-      e.preventDefault();
-      const data = new FormData(form);
-      const collection = collectionById(String(data.get('id') || ''));
-      const name = String(data.get('name') || '').trim();
-      if (collection && name) {
-        collection.name = name;
-        persist();
-        closeModal();
-        render();
-      }
-    } else if (form.id === 'form-catalogue') {
-      e.preventDefault();
-      runCatalogueSearch(form.elements.q.value);
-    } else if (form.id === 'form-catalogue-key') {
-      e.preventDefault();
-      saveCatalogueKey(form);
-    } else if (form.id === 'form-profile') {
-      e.preventDefault();
-      const data = new FormData(form);
-      db.profile.username = String(data.get('username') || '').trim().slice(0, 40) || 'Player One';
-      db.profile.bio = String(data.get('bio') || '').trim().slice(0, 240);
-      persist();
-      closeModal(true);
-      render();
-      toast('Profile saved');
-    } else if (form.id === 'form-custom-platform') {
-      e.preventDefault();
-      const data = new FormData(form);
-      const game = gameById(String(data.get('id') || ''));
-      const name = String(data.get('name') || '').trim();
-      if (game && name) {
-        if (!(game.platforms || []).some((p) => p.name === name)) {
-          game.platforms = (game.platforms || []).concat({ name, appId: null });
-          persist();
-        }
-        closeModal(true);
-        render();
-      }
-    }
-  });
-
-  document.addEventListener('click', onClick);
-
-  document.addEventListener('input', (e) => {
-    if (e.target.id === 'lib-search') {
-      state.query = e.target.value;
-      const items = visibleGames();
-      const body = $('#lib-body');
-      const count = $('#lib-count');
-      if (body) body.innerHTML = libraryBody(items);
-      if (count) count.textContent = resultLabel(items.length);
-    } else if (e.target.id === 'disc-search') {
-      state.discoveryQuery = e.target.value;
-      const scroll = window.scrollY;
-      render();
-      window.scrollTo(0, scroll);
-      const field = $('#disc-search');
-      if (field) { field.focus(); field.setSelectionRange(field.value.length, field.value.length); }
-    }
-  });
-
-  document.addEventListener('change', (e) => {
-    const target = e.target;
-    if (target.id === 'lib-sort') {
-      state.sort = target.value;
-      db.settings.sort = state.sort;
-      persist();
-      const items = visibleGames();
-      const body = $('#lib-body');
-      if (body) body.innerHTML = libraryBody(items);
-    } else if (target.dataset && target.dataset.setting) {
-      db.settings[target.dataset.setting] = target.value;
-      if (target.dataset.setting === 'view') state.view = target.value;
-      if (target.dataset.setting === 'sort') state.sort = target.value;
-      persist();
-      render();
-    } else if (target.dataset && target.dataset.filter) {
-      const key = target.dataset.filter;
-      state.filter[key] = target.value;
-      render();
-      openFilters();
-    }
-  });
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files && fileInput.files[0];
-    if (file) handleFile(file);
-  });
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeModal();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      if (state.modalOpen) closeModal();
-      else back();
-    }
-  });
-
-  /* ------------------------------------------------------------------ *
+  /* ==================================================================== *
    * Boot
-   * ------------------------------------------------------------------ */
+   * ==================================================================== */
 
   function boot() {
-    try { history.replaceState({ depth: 1 }, ''); } catch (e) { /* ignore */ }
-    renderTabbar();
+    renderNav();
+    render();
     Art.all().then((all) => {
       Object.assign(ART, all);
       state.sort = db.settings.sort;
       state.view = db.settings.view;
       render();
-    }).catch(() => {
-      render();
-    });
-    render();
+    }).catch(() => { /* artwork unavailable */ });
   }
 
   boot();
