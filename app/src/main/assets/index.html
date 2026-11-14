@@ -3,67 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1117">
+  <meta name="theme-color" content="#000000">
   <title>GameVault</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="sticky-top">
-    <div class="topbar">
-      <h1>GameVault</h1>
-      <button type="button" class="icon-btn" id="add-btn" aria-label="Add game">+</button>
-    </div>
-    <div class="search-row">
-      <input type="search" id="search" placeholder="Search title, genre, platform" aria-label="Search games">
-      <select id="sort" aria-label="Sort games">
-        <option value="recent">Recent</option>
-        <option value="title">A–Z</option>
-        <option value="rating">Top rated</option>
-      </select>
-    </div>
-    <div class="chips" id="filters"></div>
-  </header>
+  <div class="app" id="app"></div>
 
-  <main>
-    <section class="stats" id="stats"></section>
-    <ul class="list" id="list"></ul>
-    <p class="empty" id="empty" hidden></p>
-  </main>
+  <nav class="tabbar" id="tabbar" aria-label="Primary"></nav>
 
-  <div class="modal" id="modal" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <form id="game-form" autocomplete="off">
-        <div class="sheet-head">
-          <h2 id="modal-title">Add game</h2>
-          <button type="button" class="icon-btn ghost" id="close-btn" aria-label="Close">×</button>
-        </div>
+  <div class="overlay" id="overlay" hidden></div>
 
-        <label>Title
-          <input name="title" required maxlength="80">
-        </label>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-        <div class="grid2">
-          <label>Platform <select name="platform"></select></label>
-          <label>Status <select name="status"></select></label>
-        </div>
-
-        <div class="grid2">
-          <label>Genre <input name="genre" maxlength="40"></label>
-          <label>Rating <select name="rating"></select></label>
-        </div>
-
-        <label>Notes
-          <textarea name="notes" rows="4" maxlength="500"></textarea>
-        </label>
-
-        <div class="actions">
-          <button type="button" class="btn danger" id="delete-btn" hidden>Delete</button>
-          <span class="spacer"></span>
-          <button type="submit" class="btn primary">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
+  <input type="file" id="file-input" accept="image/*" hidden>
 
   <script src="app.js"></script>
 </body>
