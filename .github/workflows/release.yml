@@ -1,0 +1,45 @@
+name: Release APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from Gradle
+        id: version
+        run: |
+          VERSION=$(grep -oP "versionName ['\"]\K[^'\"]+" app/build.gradle)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          APK="artifacts/gamevault-${VERSION}-debug.apk"
+          if [ ! -f "$APK" ]; then
+            echo "No APK committed at $APK"
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --title "GameVault ${VERSION}" \
+              --notes "Offline-first Android gaming library.
+
+**Install:** download the APK below and open it on your phone (allow installs from this source if prompted).
+
+This build is debug-signed, so it can be sideloaded but not published to Google Play. Local-only data: no account, no cloud sync."
+          fi
