@@ -2714,9 +2714,12 @@
     db.games.forEach((g) => { g.coverKey = null; g.backgroundKey = null; });
     db.collections.forEach((c) => { c.artworkKey = null; });
     db.profile.avatarKey = null;
+    artCount = 0;
+    storageUsed = '';
     persist();
     closeModal();
     render();
+    refreshArtCount();
     toast('Artwork cache cleared');
   }
 
@@ -2860,6 +2863,7 @@
     state.pendingRestore = null;
     db = restored;
     persist();
+    refreshArtCount();
     closeModal();
     tabTo('home');
     toast('Backup restored · ' + restored.games.length + ' games');
@@ -2892,6 +2896,8 @@
     persist();
     await Art.clear();
     Object.keys(ART).forEach((k) => delete ART[k]);
+    artCount = 0;
+    storageUsed = '';
     closeModal();
     tabTo('home');
     toast('All local data deleted');
