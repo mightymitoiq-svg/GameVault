@@ -24,6 +24,7 @@
   ];
   const STATUS_LABEL = Object.fromEntries(STATUSES);
   const VIEWS = [['grid', 'Grid'], ['list', 'List'], ['compact', 'Compact']];
+  const ACTIVITY_FILTERS = [['all', 'All'], ['launched', 'Launches'], ['status', 'Status'], ['added', 'Added'], ['artwork', 'Artwork'], ['collection', 'Collections'], ['removed', 'Removed']];
   const SORTS = [
     ['added', 'Recently added'],
     ['title', 'Alphabetical'],
@@ -126,6 +127,16 @@
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
+  async function fetchWithTimeout(url, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   const relTime = (ts) => {
     if (!ts) return 'Never';
     const diff = Date.now() - ts;
@@ -169,28 +180,53 @@
     }
 
     return {
-      async put(dataUrl) {
+      async put(dataUrl, thumb) {
         const key = 'art_' + uid();
         memory.set(key, dataUrl);
-        try { await run('readwrite', (s) => s.put(dataUrl, key)); } catch (e) { /* memory fallback */ }
+        try {
+          await run('readwrite', (s) => {
+            s.put(dataUrl, key);
+            if (thumb) s.put(thumb, 'thumb:' + key);
+          });
+        } catch (e) { /* memory fallback */ }
         return key;
       },
       async get(key) {
         if (!key) return null;
-        if (memory.has(key)) return memory.get(key);
+        const stored = memory.get(key);
+        if (stored) return stored;
         try {
           const value = await run('readonly', (s) => s.get(key));
-          if (value) memory.set(key, value);
           return value || null;
         } catch (e) { return null; }
       },
+      async getMany(keys) {
+        const out = {};
+        const wanted = [...new Set((keys || []).filter(Boolean))];
+        if (!wanted.length) return out;
+        wanted.forEach((key) => { if (memory.has(key)) out[key] = memory.get(key); });
+        const missing = wanted.filter((key) => !out[key]);
+        if (!missing.length) return out;
+        try {
+          const values = await Promise.all(missing.map((key) => run('readonly', (s) => s.get(key))));
+          missing.forEach((key, i) => { if (values[i]) out[key] = values[i]; });
+        } catch (e) { /* ignore */ }
+        return out;
+      },
+      async keys() {
+        try {
+          const stored = await run('readonly', (s) => s.getAllKeys());
+          return stored.concat([...memory.keys()].filter((key) => !stored.includes(key)));
+        } catch (e) { return [...memory.keys()]; }
+      },
       async all() {
+        const out = {};
         try {
           const keys = await run('readonly', (s) => s.getAllKeys());
           const values = await run('readonly', (s) => s.getAll());
-          keys.forEach((k, i) => memory.set(k, values[i]));
+          keys.forEach((k, i) => { out[k] = values[i]; });
         } catch (e) { /* ignore */ }
-        return Object.fromEntries(memory);
+        return Object.assign(out, Object.fromEntries(memory));
       },
       async clear() {
         memory.clear();
@@ -325,6 +361,27 @@
   }
 
   let db = loadDb();
+  let artCount = null;
+  let storageUsed = '';
+
+  const ownedGames = () => db.games.filter((g) => !g.wishlist);
+  const artCountLabel = () => (artCount == null ? '…' : artCount);
+
+  async function refreshArtCount() {
+    try {
+      const keys = await Art.keys();
+      artCount = keys.filter((key) => String(key).indexOf('thumb:') !== 0).length;
+    } catch (e) { artCount = null; }
+    if (navigator.storage && navigator.storage.estimate) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        if (estimate && estimate.usage) {
+          const mb = estimate.usage / 1048576;
+          storageUsed = mb >= 1 ? mb.toFixed(1) + ' MB' : Math.max(1, Math.round(estimate.usage / 1024)) + ' KB';
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
 
   function persist() {
     try {
@@ -433,6 +490,9 @@
     pendingArt: null,
     formPlatforms: [],
     pendingRestore: null,
+    lastFocus: null,
+    activityLimit: 50,
+    activityFilter: 'all',
   };
 
   const TAB_OF = { home: 'home', library: 'library', add: 'add', activity: 'activity', profile: 'profile' };
@@ -442,7 +502,9 @@
   }
 
   function go(screen, params) {
-    state.stack.push({ screen, params: params || {} });
+    current().scrollY = window.scrollY;
+    state.reorder = false;
+    state.stack.push({ screen, params: params || {}, scrollY: 0 });
     state.activeTab = TAB_OF[screen] || state.activeTab;
     render();
     window.scrollTo(0, 0);
@@ -450,6 +512,8 @@
 
   function tabTo(name) {
     closeModal();
+    state.reorder = false;
+    if (name === 'activity') { state.activityLimit = 50; state.activityFilter = 'all'; }
     if (state.activeTab === name && state.stack.length === 1) {
       window.scrollTo(0, 0);
       return;
@@ -464,8 +528,12 @@
     if (state.modalOpen) { closeModal(); return; }
     if (state.stack.length > 1) {
       state.stack.pop();
+      state.reorder = false;
       state.activeTab = TAB_OF[current().screen] || state.activeTab;
       render();
+      const y = current().scrollY || 0;
+      window.scrollTo(0, y);
+      requestAnimationFrame(() => window.scrollTo(0, y));
     }
   }
 
@@ -479,17 +547,61 @@
    * Components
    * ==================================================================== */
 
-  const artUrl = (record, kind) => {
-    const key = kind === 'background' ? record.backgroundKey : record.coverKey;
-    if (key && ART[key]) return ART[key];
-    return (kind === 'background' ? record.backgroundUrl : record.coverUrl) || '';
+    const artSource = (record, kind) => {
+    if (!record) return { key: null, url: '' };
+    const background = kind === 'background';
+    return {
+      key: (background ? record.backgroundKey : record.coverKey) || null,
+      url: (background ? record.backgroundUrl : record.coverUrl) || '',
+    };
   };
+
+  const hasArt = (record, kind) => {
+    const source = artSource(record, kind);
+    return !!(source.key || source.url);
+  };
+
+  function artTag(record, kind, attrs, useThumb) {
+    const source = artSource(record, kind);
+    if (source.key) {
+      if (ART[source.key]) return '<img src="' + esc(ART[source.key]) + '" ' + attrs + '>';
+      const thumb = useThumb === false ? '' : ' data-thumb="1"';
+      return '<img data-art="' + esc(source.key) + '"' + thumb + ' ' + attrs + '>';
+    }
+    return source.url ? '<img src="' + esc(source.url) + '" ' + attrs + '>' : '';
+  }
+
+  function heroTag(record, attrs) {
+    if (hasArt(record, 'background')) return artTag(record, 'background', attrs, false);
+    if (hasArt(record, 'cover')) return artTag(record, 'cover', attrs, false);
+    return '';
+  }
+
+  async function hydrateArt(root) {
+    const nodes = $$('img[data-art]', root || document).filter((img) => !img.dataset.artDone);
+    if (!nodes.length) return;
+    nodes.forEach((img) => { img.dataset.artDone = '1'; });
+    const wanted = [];
+    nodes.forEach((img) => {
+      wanted.push(img.dataset.art);
+      if (img.dataset.thumb === '1') wanted.push('thumb:' + img.dataset.art);
+    });
+    const values = await Art.getMany(wanted);
+    nodes.forEach((img) => {
+      const key = img.dataset.art;
+      const preferThumb = img.dataset.thumb === '1';
+      const src = (preferThumb && values['thumb:' + key]) || values[key];
+      if (src) img.src = src;
+      else { img.dataset.failed = '1'; img.style.display = 'none'; }
+    });
+  }
 
   function artMarkup(record, opts) {
     const o = opts || {};
-    const url = artUrl(record, o.background ? 'background' : 'cover');
+    const artAttrs = 'alt="" width="300" height="400" loading="lazy" decoding="async"';
     return '<span class="art' + (o.className ? ' ' + o.className : '') + '" style="--hue:' + hueOf(record.title) + '">' +
-      (url ? '<img src="' + esc(url) + '" alt="" width="300" height="400" loading="lazy" decoding="async">' : '<span>' + esc(initials(record.title)) + '</span>') +
+      '<span class="art-initials">' + esc(initials(record.title)) + '</span>' +
+      artTag(record, o.background ? 'background' : 'cover', artAttrs) +
       (o.favorite ? '<span class="art-badge">' + icon('star') + '</span>' : '') +
       (o.status ? '<span class="art-status ' + esc(record.status) + '"><span class="dot"></span>' +
         esc(STATUS_LABEL[record.status]) + '</span>' : '') +
@@ -572,6 +684,26 @@
       Array.from({ length: count }).map(() => '<div class="sk row"></div>').join('') + '</div>';
   }
 
+  const appIconCache = new Map();
+
+  function hydrateAppIcons(root) {
+    const nodes = $$('img[data-icon-pkg]', root || document).filter((img) => !img.dataset.iconDone);
+    if (!nodes.length) return;
+    nodes.forEach((img) => { img.dataset.iconDone = '1'; });
+    nodes.forEach((img, index) => {
+      setTimeout(() => {
+        if (!img.isConnected || !host) return;
+        const pkg = img.dataset.iconPkg;
+        let url = appIconCache.get(pkg) || '';
+        if (!url && host.getAppIcon) {
+          try { url = host.getAppIcon(pkg) || ''; } catch (e) { url = ''; }
+          if (url) appIconCache.set(pkg, url);
+        }
+        if (url) img.src = url;
+      }, Math.min(800, index * 6));
+    });
+  }
+
   function hydrateImages(root) {
     $$('img', root || document).forEach((img) => {
       if (img.dataset.hydrated) return;
@@ -587,7 +719,7 @@
    * ==================================================================== */
 
   function screenHome() {
-    const games = db.games;
+    const games = ownedGames();
     const launches = games.reduce((n, g) => n + g.launchCount, 0);
     const completed = games.filter((g) => g.status === 'completed').length;
     const playing = games.filter((g) => g.status === 'playing');
@@ -602,14 +734,14 @@
     const favCollections = db.collections.filter((c) => c.favorite).slice(0, 4);
     const favoriteGames = games.filter((g) => g.favorite).slice(0, 10);
     const name = db.profile.username || 'Player One';
-    const avatarUrl = db.profile.avatarKey && ART[db.profile.avatarKey];
+    const avatarKey = db.profile.avatarKey;
 
     let html = '<div class="screen"><div class="intro">' +
       '<div class="intro-top"><div>' +
       '<p class="overline" translate="no" style="margin:0">GameVault</p>' +
       '<h1 class="display">Welcome back, ' + esc(name) + '</h1>' +
       '</div><button class="avatar" data-act="tab-profile" aria-label="Open profile">' +
-      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="" width="96" height="96" decoding="async">' : esc(initials(name))) + '</button></div>' +
+      (avatarKey ? artTag({ coverKey: avatarKey }, 'cover', 'alt="" width="96" height="96" decoding="async"') : esc(initials(name))) + '</button></div>' +
       statStrip([
         ['Games', games.length],
         ['Playing', playing.length],
@@ -628,10 +760,9 @@
     }
 
     if (featured) {
-      const bg = artUrl(featured, 'background') || artUrl(featured, 'cover');
+      const featureArt = heroTag(featured, 'class="feature-art" alt="" width="1200" height="825" fetchpriority="high" decoding="async"');
       html += '<button class="feature" style="--hue:' + hueOf(featured.title) + '" data-act="open-game" data-id="' + esc(featured.id) + '">' +
-        (bg ? '<img class="feature-art" src="' + esc(bg) + '" alt="" width="1200" height="825" fetchpriority="high" decoding="async">'
-          : '<span class="feature-mark" aria-hidden="true">' + esc(initials(featured.title)) + '</span>') +
+        (featureArt || '<span class="feature-mark" aria-hidden="true">' + esc(initials(featured.title)) + '</span>') +
         '<span class="feature-scrim"></span>' +
         '<span class="feature-body">' +
         tag(featured.status === 'playing' ? 'Continue playing' : 'Featured game') +
@@ -668,21 +799,25 @@
       html += '<section class="section">' + sectionHead('Favorite collections', 'All', 'open-collections') +
         '<div class="rail" style="gap:12px">' + favCollections.map((c) => {
           const first = c.gameIds.map(gameById).filter(Boolean)[0];
-          const img = c.artworkKey && ART[c.artworkKey] ? ART[c.artworkKey] : (first ? artUrl(first, 'background') || artUrl(first, 'cover') : '');
+          const img = c.artworkKey
+            ? artTag({ coverKey: c.artworkKey }, 'cover', 'alt="" width="800" height="450" loading="lazy" decoding="async"')
+            : (first ? heroTag(first, 'alt="" width="800" height="450" loading="lazy" decoding="async"') : '');
           return '<button class="shelf" style="flex:0 0 260px;width:260px" data-act="open-collection" data-id="' + esc(c.id) + '">' +
-            (img ? '<img src="' + esc(img) + '" alt="" width="800" height="450" loading="lazy" decoding="async">' : '') +
+            img +
             (c.favorite ? '<span class="shelf-fav">' + icon('star') + '</span>' : '') +
             '<span class="shelf-body"><span class="shelf-title">' + esc(c.name) + '</span>' +
             '<span class="shelf-meta">' + c.gameIds.length + ' games</span></span></button>';
         }).join('') + '</div></section>';
     }
 
-    html += '<section class="section"><div class="tiles">' +
-      '<button class="tile accent" data-act="tab-library">' + icon('grid') +
-      '<span><span class="tile-label">Full library</span><span class="tile-sub">' + games.length + ' games</span></span></button>' +
-      '<button class="tile" data-act="open-collections">' + icon('folder') +
-      '<span><span class="tile-label">Collections</span><span class="tile-sub">' + db.collections.length + ' custom</span></span></button>' +
-      '</div></section>';
+    const wishlist = db.games.filter((g) => g.wishlist);
+    if (wishlist.length) {
+      html += '<section class="section"><div class="tiles">' +
+        '<button class="tile" data-act="tab-library">' + icon('star') +
+        '<span><span class="tile-label">Wishlist</span><span class="tile-sub">' +
+        wishlist.length + (wishlist.length === 1 ? ' game' : ' games') + ' to pick up</span></span></button>' +
+        '</div></section>';
+    }
 
     return html + '</div></div>';
   }
@@ -699,8 +834,8 @@
       '<button class="iconbtn" data-act="open-filters" aria-label="Filters and sorting">' + icon('filters') + '</button>' +
       '</div><div class="lib-tools">' +
       '<div class="chips" style="flex:1">' + statusChips() + '</div>' +
-      '</div></div></div>' +
-      '<div class="wrap"><div class="count-line"><span id="lib-count">' + resultLabel(items.length) + '</span>' +
+      '</div><div id="lib-filters">' + activeFilterRow() + '</div></div></div>' +
+      '<div class="wrap"><div class="count-line"><span id="lib-count" aria-live="polite">' + resultLabel(items.length) + '</span>' +
       '<span style="display:flex;align-items:center;gap:10px">' +
       '<span>' + esc(SORTS.find((s) => s[0] === state.sort)[1]) + '</span>' +
       '<span class="viewswitch" role="group" aria-label="Display mode">' +
@@ -717,6 +852,29 @@
     return [['all', 'All']].concat(STATUSES).map(([id, label]) =>
       '<button class="chip" data-act="filter-status" data-status="' + id + '" aria-pressed="' +
       (state.filter.status === id) + '">' + esc(label) + '</button>').join('');
+  }
+
+  const FILTER_LABELS = {
+    platform: (value) => value,
+    genre: (value) => value,
+    installed: (value) => (value === 'yes' ? 'Installed' : 'Not installed'),
+    completion: (value) => (value === 'completed' ? 'Completed only' : 'Not completed'),
+  };
+
+  function activeFilterList() {
+    const f = state.filter;
+    return ['platform', 'genre', 'installed', 'completion']
+      .filter((key) => f[key] !== 'all')
+      .map((key) => ({ key, label: FILTER_LABELS[key](f[key]) }));
+  }
+
+  function activeFilterRow() {
+    const active = activeFilterList();
+    if (!active.length) return '';
+    return '<div class="chips active-filters">' + active.map((f) =>
+      '<button class="chip" data-act="clear-filter" data-key="' + f.key + '">' + esc(f.label) +
+      '<span aria-hidden="true">✕</span><span class="sr-only"> filter active, clear it</span></button>').join('') +
+      '<button class="chip" data-act="clear-filters">Clear all</button></div>';
   }
 
   function libraryBody(items) {
@@ -748,6 +906,8 @@
       body.innerHTML = libraryBody(items);
       hydrateImages(body);
     }
+    const filters = $('#lib-filters');
+    if (filters) filters.innerHTML = activeFilterRow();
     const count = $('#lib-count');
     if (count) count.textContent = resultLabel(items.length);
     observeLibrary(items.length);
@@ -848,7 +1008,7 @@
       return '<button class="discover' + (existing ? ' in-library' : '') + '" ' +
         'data-act="discover-toggle" data-pkg="' + esc(app.packageName) + '" ' +
         'aria-pressed="' + (selected || !!existing) + '"' + (existing ? ' disabled' : '') + '>' +
-        '<img class="app-icon" src="' + esc(app.icon || '') + '" alt="" width="88" height="88" loading="lazy" decoding="async">' +
+        '<img class="app-icon" data-icon-pkg="' + esc(app.packageName) + '" alt="" width="88" height="88" loading="lazy" decoding="async">' +
         '<span class="discover-main"><span class="discover-title">' + esc(app.label) + '</span>' +
         '<span class="discover-sub">' + esc(existing ? 'Already in library' : app.packageName) + '</span></span>' +
         '<span class="tick">' + icon('check') + '</span></button>';
@@ -885,7 +1045,9 @@
     if (state.catalogueError) {
       return html + '<div class="notice error" style="margin-top:14px">' + icon('close') + '<div><strong>Catalogue unavailable</strong>' +
         esc(state.catalogueError) + ' Check your connection, or add the game by hand.</div></div>' +
-        '<button class="btn block" style="margin-top:12px" data-act="add-tab" data-tab="manual">Add manually instead</button>';
+        '<div style="display:flex;gap:8px;margin-top:12px">' +
+        '<button class="btn primary" style="flex:1" data-act="catalogue-retry">' + icon('search') + 'Try again</button>' +
+        '<button class="btn" style="flex:1" data-act="add-tab" data-tab="manual">Add manually</button></div>';
     }
 
     if (!state.catalogue) {
@@ -917,6 +1079,13 @@
       '<button class="btn primary block" type="submit" style="margin-top:16px">Add to library</button></form>';
   }
 
+  function formArtPreview(values) {
+    const key = state.formArtwork || (values && values.coverKey) || null;
+    const remote = values && values.coverUrl ? values.coverUrl : '';
+    const markup = artTag({ coverKey: key, coverUrl: remote }, 'cover', 'alt="" width="84" height="112" decoding="async"');
+    return markup || '<span class="form-art-empty">No artwork</span>';
+  }
+
   function gameFields(values) {
     state.formPlatforms = (values.platforms || []).map((p) => (typeof p === 'string' ? p : p.name));
     const genreText = Array.isArray(values.genres) ? values.genres.join(', ') : '';
@@ -941,7 +1110,12 @@
       '<label class="field"><span class="label">Publisher</span><input name="publisher" maxlength="80" autocomplete="off" value="' + esc(values.publisher) + '"></label></div>' +
       '<label class="field"><span class="label">Release date</span><input name="releaseDate" type="date" value="' + esc(values.releaseDate) + '"></label>' +
       '<div class="field"><span class="label">Cover artwork</span>' +
-      '<button type="button" class="btn block" data-act="change-art" data-target="cover">' + icon('image') + 'Choose image</button></div>' +
+      '<div id="form-art-preview" class="form-art">' + formArtPreview(values) + '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:8px">' +
+      '<button type="button" class="btn sm" style="flex:1" data-act="change-art" data-target="cover">' + icon('image') +
+      (formArtPreview(values) ? 'Replace' : 'Choose image') + '</button>' +
+      '<button type="button" class="btn sm ghost" style="flex:1" data-act="form-art-clear"' + (state.formArtwork ? '' : ' hidden') + '>Remove</button>' +
+      '</div></div>' +
       '<label class="field"><span class="label">Description</span>' +
       '<textarea name="description" maxlength="2000" rows="3" autocomplete="off">' + esc(values.description) + '</textarea></label>' +
       '<label class="field"><span class="label">Personal notes</span>' +
@@ -955,8 +1129,7 @@
         '<div class="wrap">' + empty('Game not found', 'This entry no longer exists in your library.', 'Back to library', 'tab-library', 'search') + '</div></div>';
     }
 
-    const cover = artUrl(game, 'cover');
-    const bg = artUrl(game, 'background') || cover;
+    const heroArtMarkup = heroTag(game, 'alt="" width="900" height="600" fetchpriority="high" decoding="async"');
     const launchable = (game.platforms || []).find((p) => p.appId && installedApp(p.appId));
     const onProfile = (db.profile.favoriteGameIds || []).includes(game.id);
     const inCollections = db.collections.filter((c) => c.gameIds.includes(game.id));
@@ -968,8 +1141,8 @@
       ['Franchise', game.franchise],
     ].filter(([, value]) => value);
 
-    return '<div class="screen"><div class="hero' + (bg ? '' : ' no-art') + '">' +
-      '<div class="hero-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" width="900" height="600" fetchpriority="high" decoding="async">' : '') + '</div>' +
+    return '<div class="screen"><div class="hero' + (heroArtMarkup ? '' : ' no-art') + '">' +
+      '<div class="hero-bg">' + heroArtMarkup + '</div>' +
       '<div class="hero-top"><button class="iconbtn glass" data-act="back" aria-label="Back">' + icon('back') + '</button>' +
       '<div style="display:flex;gap:8px">' +
       '<button class="iconbtn glass" data-act="toggle-fav" data-id="' + esc(game.id) + '" aria-pressed="' + game.favorite + '" aria-label="Favorite">' + icon('star') + '</button>' +
@@ -992,9 +1165,10 @@
         '" aria-pressed="' + (game.status === id) + '">' + esc(label) + '</button>').join('') + '</div>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">' +
       '<span class="caption">Your rating</span>' +
-      '<span class="starpick" role="group" aria-label="Personal rating">' + [1, 2, 3, 4, 5].map((n) =>
+      '<span class="starpick" role="group" aria-label="Personal rating, ' + esc(game.rating ? game.rating + ' of 5' : 'not rated') + '">' + [1, 2, 3, 4, 5].map((n) =>
         '<button class="' + (n <= game.rating ? 'on' : '') + '" data-act="rate" data-id="' + esc(game.id) +
-        '" data-value="' + n + '" aria-label="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>').join('') +
+        '" data-value="' + n + '" aria-pressed="' + (n <= game.rating) + '" aria-label="Rate ' + n +
+        ' star' + (n > 1 ? 's' : '') + '">★</button>').join('') +
       '</span></div>' +
       '<div class="facts" style="margin-top:16px">' +
       '<div><div class="fact-label">Added</div><div class="fact-value">' + esc(relTime(game.addedAt)) + '</div></div>' +
@@ -1014,6 +1188,11 @@
       '<div style="display:flex;gap:8px;margin-top:8px">' +
       '<button class="btn ghost sm" style="flex:1" data-act="change-art" data-target="cover" data-id="' + esc(game.id) + '">' + icon('image') + 'Cover</button>' +
       '<button class="btn ghost sm" style="flex:1" data-act="change-art" data-target="background" data-id="' + esc(game.id) + '">' + icon('image') + 'Backdrop</button>' +
+      '</div>' +
+      ((game.coverKey || game.backgroundKey)
+        ? '<button class="btn ghost sm" style="width:100%;margin-top:8px" data-act="remove-art" data-target="game" data-id="' + esc(game.id) + '">' + icon('trash') + 'Remove artwork</button>'
+        : '') +
+      '<button class="btn ghost sm danger" style="width:100%;margin-top:8px" data-act="delete-game" data-id="' + esc(game.id) + '">' + icon('trash') + 'Remove from library</button>' +
       '</div></div>' +
 
       '<div class="panel"><div class="panel-head"><h2 class="panel-title">Platform versions</h2>' +
@@ -1047,9 +1226,6 @@
           '</div></div>'
         : '') +
 
-      '<div class="panel"><button class="btn danger block" data-act="delete-game" data-id="' + esc(game.id) + '">' +
-      icon('trash') + 'Remove from library</button></div>' +
-
       '</div></div></div></div>';
   }
 
@@ -1071,10 +1247,11 @@
       '<section class="section">' + sectionHead('Your shelves') +
       (shelves.length ? '<div class="shelves">' + shelves.map((c) => {
         const first = c.gameIds.map(gameById).filter(Boolean)[0];
-        const img = c.artworkKey && ART[c.artworkKey] ? ART[c.artworkKey]
-          : (first ? artUrl(first, 'background') || artUrl(first, 'cover') : '');
+        const img = c.artworkKey
+          ? artTag({ coverKey: c.artworkKey }, 'cover', 'alt="" width="800" height="450" loading="lazy" decoding="async"')
+          : (first ? heroTag(first, 'alt="" width="800" height="450" loading="lazy" decoding="async"') : '');
         return '<button class="shelf" data-act="open-collection" data-id="' + esc(c.id) + '">' +
-          (img ? '<img src="' + esc(img) + '" alt="" width="800" height="450" loading="lazy" decoding="async">' : '') +
+          img +
           (c.favorite ? '<span class="shelf-fav">' + icon('star') + '</span>' : '') +
           '<span class="shelf-body"><span class="shelf-title">' + esc(c.name) + '</span>' +
           '<span class="shelf-meta">' + c.gameIds.length + (c.gameIds.length === 1 ? ' game' : ' games') + '</span></span></button>';
@@ -1099,6 +1276,7 @@
         '<button class="btn sm" data-act="fav-collection" data-id="' + esc(id) + '">' + icon('star') + (collection.favorite ? 'Starred' : 'Star') + '</button>' +
         '<button class="btn sm" data-act="rename-collection" data-id="' + esc(id) + '">' + icon('pencil') + 'Rename</button>' +
         '<button class="btn sm" data-act="collection-art" data-id="' + esc(id) + '">' + icon('image') + 'Artwork</button>' +
+        (collection.artworkKey ? '<button class="btn sm danger" data-act="remove-art" data-target="collection" data-id="' + esc(id) + '">' + icon('trash') + 'Remove art</button>' : '') +
         '<button class="btn sm" data-act="collection-add" data-id="' + esc(id) + '">' + icon('plus') + 'Games</button>' +
         '<button class="btn sm" data-act="reorder-toggle">' + (state.reorder ? 'Done' : 'Reorder') + '</button>' +
         '<button class="btn sm danger" data-act="delete-collection" data-id="' + esc(id) + '">' + icon('trash') + 'Delete</button>' +
@@ -1135,7 +1313,7 @@
   };
 
   function screenActivity() {
-    const games = db.games;
+    const games = ownedGames();
     const launches = games.reduce((n, g) => n + g.launchCount, 0);
     const played = games.filter((g) => g.launchCount > 0).length;
     const completed = games.filter((g) => g.status === 'completed').length;
@@ -1153,16 +1331,24 @@
       '<div class="chart-row"><div class="chart-head"><span>' + esc(name) + '</span><span class="n">' + n + '</span></div>' +
       '<div class="chart-track"><span class="chart-fill" style="width:' + Math.round((n / maxOf(obj)) * 100) + '%"></span></div></div>').join('');
 
+    const filteredActivity = state.activityFilter === 'all'
+      ? db.activity
+      : db.activity.filter((e) => (state.activityFilter === 'status'
+        ? (e.type === 'status' || e.type === 'completed')
+        : e.type === state.activityFilter));
+    const totalEvents = filteredActivity.length;
     const groups = new Map();
-    db.activity.forEach((e) => {
+    filteredActivity.slice(0, state.activityLimit).forEach((e) => {
       const key = dayKey(e.at);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     });
 
     let timeline;
-    if (!db.activity.length) {
-      timeline = empty('No activity yet', 'Adding, launching and completing games will appear here.', 'Add a game', 'tab-add', 'clock');
+    if (!filteredActivity.length) {
+      timeline = db.activity.length
+        ? empty('No events match', 'Try another event type.', '', '', 'clock')
+        : empty('No activity yet', 'Adding, launching and completing games will appear here.', 'Add a game', 'tab-add', 'clock');
     } else {
       timeline = '';
       groups.forEach((events) => {
@@ -1193,16 +1379,28 @@
       (Object.keys(genres).length ? '<section class="section">' + sectionHead('Genre distribution') +
         '<div class="panel"><div class="chart">' + chart(genres) + '</div></div></section>' : '') +
 
-      '<section class="section">' + sectionHead('Timeline') + timeline + '</section>' +
+      '<section class="section">' + sectionHead('Timeline') +
+      '<div class="chips" style="margin:0 0 10px">' + ACTIVITY_FILTERS.map(([id, label]) =>
+        '<button class="chip" data-act="filter-activity" data-type="' + id + '" aria-pressed="' +
+        (state.activityFilter === id) + '">' + esc(label) + '</button>').join('') + '</div>' +
+      (totalEvents > state.activityLimit
+        ? '<p class="caption" style="margin-bottom:8px">Showing ' + Math.min(state.activityLimit, totalEvents) + ' of ' + totalEvents + ' events</p>'
+        : '') +
+      timeline +
+      (totalEvents > state.activityLimit
+        ? '<button class="btn block" style="margin-top:12px" data-act="activity-more">Show 50 more</button>'
+        : '') +
+      '</section>' +
       '</div></div>';
   }
 
   function screenProfile() {
     const p = db.profile;
-    const avatarUrl = p.avatarKey && ART[p.avatarKey];
+    const avatarKey = p.avatarKey;
     const favorites = (p.favoriteGameIds || []).map(gameById).filter(Boolean);
-    const launches = db.games.reduce((n, g) => n + g.launchCount, 0);
-    const completed = db.games.filter((g) => g.status === 'completed').length;
+    const owned = ownedGames();
+    const launches = owned.reduce((n, g) => n + g.launchCount, 0);
+    const completed = owned.filter((g) => g.status === 'completed').length;
 
     return '<div class="screen">' +
       appbar('Profile', 'Private · stored on this device',
@@ -1210,14 +1408,14 @@
       '<div class="wrap">' +
       '<div class="profile-hero">' +
       '<button class="avatar lg" data-act="change-avatar" aria-label="Change profile image">' +
-      (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="" width="96" height="96" decoding="async">' : esc(initials(p.username || 'Player One'))) + '</button>' +
+      (avatarKey ? artTag({ coverKey: avatarKey }, 'cover', 'alt="" width="96" height="96" decoding="async"') : esc(initials(p.username || 'Player One'))) + '</button>' +
       '<div class="profile-name">' + esc(p.username || 'Player One') + '</div>' +
       (p.bio ? '<p class="profile-bio">' + esc(p.bio) + '</p>' : '') +
       '<button class="btn sm" data-act="edit-profile">Edit profile</button>' +
       '</div>' +
 
       '<div style="margin-top:20px">' + statStrip([
-        ['Games', db.games.length], ['Done', completed], ['Launches', launches], ['Picks', favorites.length],
+        ['Games', owned.length], ['Done', completed], ['Launches', launches], ['Picks', favorites.length],
       ]) + '</div>' +
 
       '<section class="section">' + sectionHead('Favorite platforms') +
@@ -1320,7 +1518,7 @@
         '<span class="setrow-end">' + icon('chevron') + '</span></button>' +
         '<button class="setrow" data-act="clear-art"><span class="setrow-icon">' + icon('trash') + '</span>' +
         '<span class="setrow-body"><span class="setrow-title">Clear cached artwork</span>' +
-        '<span class="setrow-desc">' + Object.keys(ART).length + ' images stored offline</span></span>' +
+        '<span class="setrow-desc">' + artCountLabel() + ' images stored offline</span></span>' +
         '<span class="setrow-end">' + icon('chevron') + '</span></button></div>';
     } else if (id === 'activity') {
       body = '<div class="group-card">' +
@@ -1334,7 +1532,7 @@
         '<div class="setrow"><span class="setrow-icon">' + icon('grid') + '</span>' +
         '<span class="setrow-body"><span class="setrow-title">Library data</span>' +
         '<span class="setrow-desc">' + db.games.length + ' games · ' + db.collections.length + ' collections · ' +
-        Object.keys(ART).length + ' artworks</span></span></div>' +
+        artCountLabel() + ' artworks' + (storageUsed ? ' · about ' + storageUsed + ' on this device' : '') + '</span></span></div>' +
         '<button class="setrow" data-act="export-backup"><span class="setrow-icon">' + icon('download') + '</span>' +
         '<span class="setrow-body"><span class="setrow-title">Export backup</span>' +
         '<span class="setrow-desc">Games, collections, profile and artwork in one file</span></span>' +
@@ -1354,9 +1552,7 @@
         '<div class="setrow"><span class="setrow-icon">' + icon('image') + '</span>' +
         '<span class="setrow-body"><span class="setrow-title">Permissions</span>' +
         '<span class="setrow-desc">Internet for the catalogue, vibration for haptics. GameVault never reads your files.</span></span></div>' +
-        '<div class="setrow"><span class="setrow-icon">' + icon('clock') + '</span>' +
-        '<span class="setrow-body"><span class="setrow-title">Reminders</span>' +
-        '<span class="setrow-desc">Not included in this version.</span></span></div></div>';
+        '</div>';
     } else {
       body = '<div class="group-card">' +
         '<div class="setrow"><span class="setrow-icon">' + icon('sparkle') + '</span>' +
@@ -1384,7 +1580,7 @@
 
   function APP_VERSION() {
     try { if (host && host.appVersion) return host.appVersion(); } catch (e) { /* ignore */ }
-    return '1.3';
+    return '1.4';
   }
 
   const SCREENS = {
@@ -1411,16 +1607,31 @@
   const fileInput = $('#file-input');
 
   function render() {
-    const view = current();
-    document.documentElement.dataset.accent = db.settings.accent;
-    if (db.settings.reduceMotion) document.documentElement.dataset.motion = 'reduced';
-    else delete document.documentElement.dataset.motion;
+    try {
+      const view = current();
+      document.documentElement.dataset.accent = db.settings.accent;
+      if (db.settings.reduceMotion) document.documentElement.dataset.motion = 'reduced';
+      else delete document.documentElement.dataset.motion;
 
-    const build = SCREENS[view.screen] || SCREENS.home;
-    app.innerHTML = build(view.params || {});
-    renderNav();
-    hydrateImages(app);
-    if (view.screen === 'library') observeLibrary(visibleGames().length);
+      const build = SCREENS[view.screen] || SCREENS.home;
+      app.innerHTML = build(view.params || {});
+      renderNav();
+      hydrateImages(app);
+      hydrateArt(app);
+      hydrateAppIcons(app);
+      if (view.screen === 'library') observeLibrary(visibleGames().length);
+    } catch (err) {
+      reportRenderFailure(err);
+    }
+  }
+
+  function reportRenderFailure(err) {
+    if (window.console && console.error) console.error('GameVault could not draw this screen', err);
+    app.innerHTML = '<div class="screen"><div class="wrap"><div class="empty">' +
+      '<span class="empty-icon">' + icon('close') + '</span>' +
+      '<h3>Something went wrong</h3>' +
+      '<p>This screen could not be drawn. Your library is stored on this device and is safe.</p>' +
+      '<button class="btn primary" data-act="reload-app">Reload GameVault</button></div></div></div>';
   }
 
   function renderNav() {
@@ -1446,12 +1657,29 @@
    * Overlay, toast
    * ==================================================================== */
 
+  let sheetSeq = 0;
+
   function openSheet(html, opts) {
     const o = opts || {};
-    overlay.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"' +
+    state.lastFocus = document.activeElement;
+    state.formArtwork = null;
+    overlay.innerHTML = '<div class="sheet" role="dialog" aria-modal="true" tabindex="-1"' +
       (o.label ? ' aria-label="' + esc(o.label) + '"' : '') + '>' + html + '</div>';
     overlay.hidden = false;
     state.modalOpen = true;
+
+    const sheet = $('.sheet', overlay);
+    if (!sheet) return;
+    if (!o.label) {
+      const heading = $('.sheet-head h2', sheet);
+      if (heading) {
+        sheetSeq += 1;
+        heading.id = 'sheet-title-' + sheetSeq;
+        sheet.setAttribute('aria-labelledby', heading.id);
+      }
+    }
+    try { sheet.focus({ preventScroll: true }); } catch (e) { sheet.focus(); }
+    hydrateArt(overlay);
   }
 
   function closeModal() {
@@ -1459,6 +1687,13 @@
     overlay.innerHTML = '';
     overlay.hidden = true;
     state.modalOpen = false;
+    state.formArtwork = null;
+    state.pendingArt = null;
+    const last = state.lastFocus;
+    state.lastFocus = null;
+    if (last && last.isConnected && typeof last.focus === 'function') {
+      try { last.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    }
   }
 
   let toastTimer = null;
@@ -1611,6 +1846,11 @@
       '<span class="spacer"></span><button class="btn primary" type="submit">Save</button></div></form>');
   }
 
+  function updateFilterCount() {
+    const button = $('#filters-count');
+    if (button) button.textContent = 'Show ' + visibleGames().length + ' games';
+  }
+
   function openFilters() {
     const genres = [...new Set(db.games.flatMap((g) => g.genres || []))].sort();
     const f = state.filter;
@@ -1636,7 +1876,7 @@
       '<span class="setrow-body"><span class="setrow-title">Favorites only</span></span>' +
       '<span class="switch" aria-checked="' + f.favorites + '"></span></button>' +
       '</div><div class="sheet-foot"><button class="btn ghost" data-act="clear-filters">Reset</button>' +
-      '<span class="spacer"></span><button class="btn primary" data-act="close-modal">Show ' +
+      '<span class="spacer"></span><button class="btn primary" data-act="close-modal" id="filters-count">Show ' +
       visibleGames().length + ' games</button></div>');
   }
 
@@ -1694,6 +1934,7 @@
         esc(platform) + '" aria-pressed="' + ((p.favoritePlatforms || []).includes(platform)) + '">' +
         esc(platform) + '</button>').join('') + '</div></div>' +
       '</div><div class="sheet-foot"><button type="button" class="btn" data-act="change-avatar">Change image</button>' +
+      (db.profile.avatarKey ? '<button type="button" class="btn ghost" data-act="remove-art" data-target="avatar">Remove image</button>' : '') +
       '<span class="spacer"></span><button class="btn primary" type="submit">Save</button></div></form>');
   }
 
@@ -1759,7 +2000,11 @@
       case 'set-status': { const g = gameById(id); if (g) setStatus(g, target.dataset.status); break; }
       case 'rate': {
         const g = gameById(id);
-        if (g) { g.rating = Number(target.dataset.value); persist(); haptic(8); render(); }
+        if (!g) break;
+        const value = Number(target.dataset.value);
+        if (g.rating === value) { g.rating = 0; toast('Rating cleared'); }
+        else g.rating = value;
+        persist(); haptic(8); render();
         break;
       }
       case 'toggle-fav': {
@@ -1878,6 +2123,40 @@
         render();
         break;
       }
+      case 'remove-art': {
+        const kind = target.dataset.target;
+        if (kind === 'collection') {
+          const c = collectionById(target.dataset.id);
+          if (c) {
+            c.artworkKey = null;
+            persist(); closeModal(); render();
+            toast('Collection artwork removed');
+          }
+        } else if (kind === 'avatar') {
+          db.profile.avatarKey = null;
+          persist(); closeModal(); render();
+          toast('Profile image removed');
+        } else {
+          const g = gameById(target.dataset.id);
+          if (g) {
+            g.coverKey = null;
+            g.backgroundKey = null;
+            g.coverUrl = null;
+            g.backgroundUrl = null;
+            g.customArt = false;
+            persist(); render();
+            toast('Artwork removed');
+          }
+        }
+        break;
+      }
+      case 'form-art-clear': {
+        state.formArtwork = null;
+        const preview = $('#form-art-preview');
+        if (preview) preview.innerHTML = formArtPreview(null);
+        target.hidden = true;
+        break;
+      }
       case 'change-art': {
         const kind = target.dataset.target;
         if (kind === 'avatar') { pickAvatar(); break; }
@@ -1918,6 +2197,7 @@
       }
       case 'discover-add': addDiscovered(); break;
       case 'catalogue-add': addFromCatalogue(Number(target.dataset.index)); break;
+      case 'catalogue-retry': runCatalogueSearch(state.catalogueQuery); break;
       case 'form-platform': {
         const platform = target.dataset.platform;
         const index = state.formPlatforms.indexOf(platform);
@@ -1943,14 +2223,38 @@
         state.limit = PAGE;
         render();
         break;
-      case 'open-filters': openFilters(); break;
-      case 'toggle-fav-filter':
-        state.filter.favorites = !state.filter.favorites;
-        persist();
-        closeModal();
+      case 'activity-more':
+        state.activityLimit += 50;
         render();
-        openFilters();
         break;
+      case 'filter-activity':
+        state.activityFilter = target.dataset.type || 'all';
+        state.activityLimit = 50;
+        render();
+        break;
+      case 'reload-app':
+        window.location.reload();
+        break;
+      case 'open-filters': openFilters(); break;
+      case 'toggle-fav-filter': {
+        state.filter.favorites = !state.filter.favorites;
+        state.limit = PAGE;
+        target.setAttribute('aria-checked', String(state.filter.favorites));
+        const knob = target.querySelector('.switch');
+        if (knob) knob.setAttribute('aria-checked', String(state.filter.favorites));
+        refreshLibrary(true);
+        updateFilterCount();
+        break;
+      }
+      case 'clear-filter': {
+        const key = target.dataset.key;
+        if (key && state.filter[key] !== undefined) {
+          state.filter[key] = 'all';
+          state.limit = PAGE;
+          render();
+        }
+        break;
+      }
       case 'set-accent':
         db.settings.accent = target.dataset.accent;
         persist();
@@ -1966,7 +2270,8 @@
       case 'confirm-clear-art': clearArtworkNow(); break;
       case 'clear-activity': clearActivity(); break;
       case 'confirm-clear-activity': clearActivityNow(); break;
-      case 'export-backup': exportBackup(); break;
+      case 'export-backup': requestExport(); break;
+      case 'confirm-export': exportBackupNow(target.dataset.art !== '0'); break;
       case 'import-backup': importBackup(); break;
       case 'delete-data': confirmDeleteAll(); break;
       case 'confirm-delete-all': deleteAllData(); break;
@@ -2060,8 +2365,8 @@
     if (target.dataset && target.dataset.filter) {
       state.filter[target.dataset.filter] = target.value;
       state.limit = PAGE;
-      render();
-      openFilters();
+      refreshLibrary(true);
+      updateFilterCount();
     } else if (target.dataset && target.dataset.setting) {
       db.settings[target.dataset.setting] = target.value;
       if (target.dataset.setting === 'view') state.view = target.value;
@@ -2085,6 +2390,23 @@
     if (e.key === 'Escape') {
       if (state.modalOpen) closeModal();
       else back();
+      return;
+    }
+    if (e.key === 'Tab' && state.modalOpen) {
+      const sheet = $('.sheet', overlay);
+      if (!sheet) return;
+      const items = $$('button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])', sheet)
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!items.length) { e.preventDefault(); sheet.focus(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === sheet)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   });
 
@@ -2096,6 +2418,17 @@
   /* hydrate images that arrive after the initial render */
   document.addEventListener('load', (e) => {
     if (e.target && e.target.tagName === 'IMG') e.target.classList.add('loaded');
+  }, true);
+
+  /* remote artwork that fails should fall back to the initials tile */
+  document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (!img || img.tagName !== 'IMG' || img.dataset.failed) return;
+    img.dataset.failed = '1';
+    img.removeAttribute('src');
+    img.style.display = 'none';
+    const holder = img.closest('.art');
+    if (holder) holder.classList.add('art-fallback');
   }, true);
 
   /* ==================================================================== *
@@ -2131,8 +2464,11 @@
     for (const app of apps) {
       if (gameForPackage(app.packageName)) continue;
       let coverKey = null;
-      if (app.icon && app.icon.startsWith('data:')) {
-        try { coverKey = await Art.put(app.icon); } catch (e) { coverKey = null; }
+      const iconData = app.icon || (host && host.getAppIcon
+        ? (() => { try { return host.getAppIcon(app.packageName) || ''; } catch (e) { return ''; } })()
+        : '');
+      if (iconData && iconData.startsWith('data:')) {
+        try { coverKey = await storeArt(iconData, 120); } catch (e) { coverKey = null; }
       }
       const game = normalizeGame({
         id: uid(),
@@ -2186,7 +2522,7 @@
     try {
       const url = 'https://api.rawg.io/api/games?key=' + encodeURIComponent(key) +
         '&search=' + encodeURIComponent(q) + '&page_size=20&search_precise=true';
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url, 12000);
       if (!response.ok) throw new Error('Provider returned ' + response.status + '.');
       const data = await response.json();
       state.catalogue = (data.results || []).map((item) => ({
@@ -2197,10 +2533,13 @@
         platforms: (item.platforms || []).map((p) => mapPlatform(p.platform && p.platform.name)).filter(Boolean),
       }));
     } catch (err) {
-      state.catalogueError = (err && err.message) || 'Network request failed.';
+      if (err && err.name === 'AbortError') state.catalogueError = 'The catalogue took too long to answer.';
+      else if (navigator.onLine === false) state.catalogueError = 'This device is offline.';
+      else state.catalogueError = (err && err.message) || 'Network request failed.';
+    } finally {
+      state.catalogueBusy = false;
+      render();
     }
-    state.catalogueBusy = false;
-    render();
   }
 
   async function addFromCatalogue(index) {
@@ -2210,7 +2549,7 @@
     let detail = null;
     try {
       if (key) {
-        const response = await fetch('https://api.rawg.io/api/games/' + item.id + '?key=' + encodeURIComponent(key));
+        const response = await fetchWithTimeout('https://api.rawg.io/api/games/' + item.id + '?key=' + encodeURIComponent(key), 15000);
         if (response.ok) detail = await response.json();
       }
     } catch (e) { detail = null; }
@@ -2242,11 +2581,11 @@
 
     if (item.image && db.settings.autoArtwork) {
       try {
-        const response = await fetch(item.image);
+        const response = await fetchWithTimeout(item.image, 20000);
         const blob = await response.blob();
         const dataUrl = await shrinkImage(blob, 900);
         if (dataUrl) {
-          meta.coverKey = await Art.put(dataUrl);
+          meta.coverKey = await storeArt(dataUrl, 480);
           meta.backgroundKey = meta.coverKey;
         }
       } catch (e) { /* keep remote URL */ }
@@ -2270,6 +2609,33 @@
   /* ==================================================================== *
    * Artwork
    * ==================================================================== */
+
+  function makeThumb(dataUrl, maxSize) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.72));
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  async function storeArt(dataUrl, thumbMax) {
+    let thumb = null;
+    try { thumb = await makeThumb(dataUrl, thumbMax || 420); } catch (e) { thumb = null; }
+    const key = await Art.put(dataUrl, thumb);
+    ART[key] = dataUrl;
+    refreshArtCount();
+    return key;
+  }
 
   function shrinkImage(blob, maxSize) {
     return new Promise((resolve) => {
@@ -2299,7 +2665,7 @@
     if (!dataUrl) { toast('Could not read that image.', true); return; }
 
     if (pending.kind === 'avatar') {
-      db.profile.avatarKey = await Art.put(dataUrl);
+      db.profile.avatarKey = await storeArt(dataUrl, 160);
       persist(); render(); toast('Profile image updated');
       return;
     }
@@ -2307,7 +2673,7 @@
     if (pending.kind === 'collection') {
       const collection = collectionById(pending.id);
       if (collection) {
-        collection.artworkKey = await Art.put(dataUrl);
+        collection.artworkKey = await storeArt(dataUrl, 700);
         persist(); render(); toast('Collection artwork updated');
       }
       return;
@@ -2315,7 +2681,7 @@
 
     const game = pending.id ? gameById(pending.id) : null;
     if (game) {
-      const key = await Art.put(dataUrl);
+      const key = await storeArt(dataUrl, 1100);
       if (pending.kind === 'background') game.backgroundKey = key;
       else { game.coverKey = key; game.backgroundKey = game.backgroundKey || key; }
       game.customArt = true;
@@ -2324,7 +2690,14 @@
       return;
     }
 
-    state.formArtwork = await Art.put(dataUrl);
+    state.formArtwork = await storeArt(dataUrl, 1100);
+    const preview = $('#form-art-preview');
+    if (preview) {
+      preview.innerHTML = formArtPreview(null);
+      const field = preview.parentElement;
+      const clear = field && field.querySelector('[data-act="form-art-clear"]');
+      if (clear) clear.hidden = false;
+    }
     toast('Artwork attached — save the game to keep it');
   }
 
@@ -2351,13 +2724,17 @@
    * Backup
    * ==================================================================== */
 
-  async function buildBackup() {
+  async function buildBackup(includeArtwork) {
     const art = {};
-    const referenced = new Set();
-    db.games.forEach((g) => { if (g.coverKey) referenced.add(g.coverKey); if (g.backgroundKey) referenced.add(g.backgroundKey); });
-    db.collections.forEach((c) => { if (c.artworkKey) referenced.add(c.artworkKey); });
-    if (db.profile.avatarKey) referenced.add(db.profile.avatarKey);
-    referenced.forEach((key) => { if (ART[key]) art[key] = ART[key]; });
+    if (includeArtwork !== false) {
+      const referenced = new Set();
+      db.games.forEach((g) => { if (g.coverKey) referenced.add(g.coverKey); if (g.backgroundKey) referenced.add(g.backgroundKey); });
+      db.collections.forEach((c) => { if (c.artworkKey) referenced.add(c.artworkKey); });
+      if (db.profile.avatarKey) referenced.add(db.profile.avatarKey);
+      const keys = [...referenced];
+      const values = await Art.getMany(keys);
+      keys.forEach((key) => { if (values[key]) art[key] = values[key]; });
+    }
 
     return JSON.stringify({
       app: 'GameVault',
@@ -2374,8 +2751,35 @@
     });
   }
 
-  async function exportBackup() {
-    const json = await buildBackup();
+  const backupSizeLabel = (bytes) => (bytes > 1048576
+    ? (bytes / 1048576).toFixed(1) + ' MB'
+    : Math.max(1, Math.round(bytes / 1024)) + ' KB');
+
+  async function requestExport() {
+    let json = '';
+    try { json = await buildBackup(true); }
+    catch (e) { toast('Could not prepare the backup.', true); return; }
+    if (json.length > 6 * 1048576) {
+      openSheet('<div class="sheet-head"><h2>Large backup</h2></div>' +
+        '<p class="body muted">This backup is about ' + backupSizeLabel(json.length) + ' because it includes artwork. ' +
+        'Exporting without artwork is far smaller; covers stay in your library on this device.</p>' +
+        '<div class="sheet-foot"><button class="btn ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+        '<button class="btn" data-act="confirm-export" data-art="0">Without artwork</button>' +
+        '<button class="btn primary" data-act="confirm-export" data-art="1">Export all</button></div>');
+      return;
+    }
+    writeBackup(json);
+  }
+
+  async function exportBackupNow(includeArtwork) {
+    let json = '';
+    try { json = await buildBackup(includeArtwork); }
+    catch (e) { toast('Could not prepare the backup.', true); return; }
+    closeModal();
+    writeBackup(json);
+  }
+
+  function writeBackup(json) {
     const name = 'gamevault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
     if (host && host.exportBackup) {
       host.exportBackup(json, name);
@@ -2498,13 +2902,13 @@
    * ==================================================================== */
 
   function boot() {
+    state.sort = db.settings.sort;
+    state.view = db.settings.view;
     renderNav();
     render();
-    Art.all().then((all) => {
-      Object.assign(ART, all);
-      state.sort = db.settings.sort;
-      state.view = db.settings.view;
-      render();
+    refreshArtCount().then(() => {
+      const view = current().screen;
+      if (view === 'settings' || view === 'settings-section') render();
     }).catch(() => { /* artwork unavailable */ });
   }
 

@@ -76,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
                 if (out != null) {
                     out.write(pendingExportJson.getBytes(StandardCharsets.UTF_8));
                     out.flush();
+                    pendingExportJson = "{}";
                     toast("Backup saved");
                 }
             } catch (Exception e) {
@@ -222,7 +223,6 @@ public class MainActivity extends AppCompatActivity {
                     JSONObject app = new JSONObject();
                     app.put("packageName", pkg);
                     app.put("label", String.valueOf(info.loadLabel(getPackageManager())));
-                    app.put("icon", iconDataUrl(info.loadIcon(getPackageManager())));
                     apps.add(app);
                 }
                 Collections.sort(apps, new Comparator<JSONObject>() {
@@ -236,6 +236,16 @@ public class MainActivity extends AppCompatActivity {
                 return array.toString();
             } catch (Exception e) {
                 return "[]";
+            }
+        }
+
+        /** Loaded per row by the web layer so a device scan never ships every icon at once. */
+        @JavascriptInterface
+        public String getAppIcon(String packageName) {
+            try {
+                return iconDataUrl(getPackageManager().getApplicationIcon(packageName));
+            } catch (Exception e) {
+                return "";
             }
         }
 
